@@ -37,74 +37,62 @@ def _load_prompt(prompt_name: str, default: str = "") -> str:
 
 def outline_system_prompt(story: Story) -> str:
     cfg = story.config
-    
-    # 从文件加载提示词，如果文件不存在则使用硬编码版本
+    tc = cfg.target_chapters
+    fmt = {
+        "genre": cfg.genre,
+        "title": cfg.title,
+        "target_chapters": tc,
+        "style": cfg.style,
+        "pov": cfg.pov,
+        "target_audience": cfg.target_audience,
+        "theme": cfg.theme or '探索人性与命运',
+        "words_per_chapter": cfg.words_per_chapter,
+        "act1_end": tc // 3,
+        "act2_start": tc // 3 + 1,
+        "act2_end": tc * 2 // 3,
+        "act3_start": tc * 2 // 3 + 1,
+        "midpoint": tc // 2,
+    }
     prompt_template = _load_prompt(
         "outline/plot_system.txt",
-        """你是一位获得过文学奖提名的小说架构师，20年{cfg.genre}类型长篇小说创作经验。
+        """你是一位获得过文学奖提名的小说架构师，20年{genre}类型长篇小说创作经验。
 你的作品以结构精密、伏笔深远、角色立体著称。
 
-你正在为《{cfg.title}》设计{cfg.target_chapters}章完整大纲。
+你正在为《{title}》设计{target_chapters}章完整大纲。
 
 【创作身份】
-- 类型：{cfg.genre}
-- 风格：{cfg.style}
-- 视角：{cfg.pov}
-- 目标读者：{cfg.target_audience}
-- 核心主题：{cfg.theme or '探索人性与命运'}
-- 每章约{cfg.words_per_chapter}字
+- 类型：{genre}
+- 风格：{style}
+- 视角：{pov}
+- 目标读者：{target_audience}
+- 核心主题：{theme}
+- 每章约{words_per_chapter}字
 
 【三幕结构 - 铁律】
-第一幕（第1-{cfg.target_chapters // 3}章）- 建立与钩住：
+第一幕（第1-{act1_end}章）- 建立与钩住：
   - 前3章必须建立核心悬念/冲突，让读者无法弃书
-  - 第{cfg.target_chapters // 3}章左右发生"第一幕转折"，打破主角日常
-  - 世界观规则通过情节自然展现，不做信息倾倒
+  - 第{act1_end}章左右发生"第一幕转折"，打破主角日常
 
-第二幕（第{cfg.target_chapters // 3 + 1}-{cfg.target_chapters * 2 // 3}章）- 升级与反转：
-  - 每5章至少一次意外反转，打破读者预判
-  - 主角遭遇至少2次重大挫折，被迫改变策略或自我
-  - 中点({cfg.target_chapters // 2}章左右)发生"中点转折"，故事走向质变
-  - 第二幕结尾主角陷入"灵魂暗夜"
+第二幕（第{act2_start}-{act2_end}章）- 升级与反转：
+  - 中点({midpoint}章左右)发生"中点转折"，故事走向质变
 
-第三幕（第{cfg.target_chapters * 2 // 3 + 1}-{cfg.target_chapters}章）- 决战与闭环：
-  - 高潮对决必须有代价，不能零损伤胜利
-  - 所有未回收伏笔在第三幕前半完成回收
-  - 结局留有余韵，避免狗血大团圆或突兀悲剧
-
-【情感曲线铁律】
-- 禁止连续3章情绪基调相同（读者会疲劳）
-- 每5章必须有一个情绪高点（紧张/爽快/悲伤选一）
-- 章尾必须留钩子：悬念、反转、情感余韵三选一
-- 情绪节奏呈波浪形：紧张→释放→再紧张，避免直线
-
-【伏笔规划】
-- 全书埋设8-15个伏笔（长短搭配：3个长线5+章、5个中线3-5章、5个短线1-2章）
-- 长线伏笔必须在前1/3埋下，第三幕回收
-- 伏笔埋设时只给半条线索，回收时才补全
-- 禁止"挖坑不填"：每个伏笔必须有明确的回收章节规划
-
-【禁止事项】
-- 禁止大纲章节只有一句话目标（太模糊）
-- 禁止连续2章目标都是"推进剧情"（等于没目标）
-- 禁止在第二幕出现连续3章没有转折
-- 禁止主角没有明确的弱点和代价
+第三幕（第{act3_start}-{target_chapters}章）- 决战与闭环：
 
 输出JSON数组，每章一个对象：
 [
   {{
     "chapter": 章节号,
-    "title": "4-10字章节标题（要有悬念或冲突感，如'暗流涌动''他不是人'，禁止'第X章'式标题）",
-    "goal": "本章核心目标（一句话，明确推动什么变化）",
-    "plot_points": ["情节点1", "情节点2", "情节点3"],
+    "title": "章节标题",
+    "goal": "本章核心目标",
+    "plot_points": ["情节点1", "情节点2"],
     "emotional_beat": "紧张/悬疑/热血/温馨/悲伤/爽快/压抑/释然/震撼/荒诞",
-    "key_characters": ["本章主要出场角色名"],
-    "foreshadowing_seeds": ["本章埋下的伏笔（写明埋了什么线索）"],
-    "twist_note": "本章的转折/意外/信息揭示（无转折写'无'）"
+    "key_characters": ["主要出场角色"],
+    "foreshadowing_seeds": ["埋下的伏笔"],
+    "twist_note": "转折/意外/信息揭示（无转折写'无'）"
   }}
 ]"""
     )
-    
-    return prompt_template.format(cfg=cfg)
+    return prompt_template.format(**fmt)
 
 
 def outline_user_prompt(story: Story) -> str:
@@ -605,6 +593,14 @@ TWIST_PATTERNS = {
 
 
 # ========== 情感节奏模板 ==========
+
+CONSISTENCY_CHECK_L1 = consistency_check_l1()
+CONSISTENCY_CHECK_L2 = consistency_check_l2()
+CONSISTENCY_CHECK_L3 = consistency_check_l3()
+ORIGINALITY_CHECK_PROMPT = originality_check_prompt()
+ALIGNMENT_CHECK_PROMPT = alignment_check_prompt()
+EMOTIONAL_CURVE_PROMPT = emotional_curve_prompt()
+
 
 EMOTIONAL_BEAT_TEMPLATES = {
     "开场": {"tension": 3, "relaxation": 5, "sadness": 1, "pleasure": 6, "desc": "温和开场，建立场景，制造舒适感"},

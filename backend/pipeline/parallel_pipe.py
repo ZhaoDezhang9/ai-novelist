@@ -34,21 +34,18 @@ class ParallelPipeline:
         if story.outline and chapter.chapter_number - 1 < len(story.outline):
             expected_beat = story.outline[chapter.chapter_number - 1].get("emotional_beat", "中性")
 
-        # 定义所有检查任务
-        all_checks = {
-            "L1": checker.check_l1_self(chapter),
-            "L2": checker.check_l2_cross(story, chapter, hot_memory),
-            "L3": checker.check_l3_world_rules(story, chapter),
-            "originality": originality.check(chapter.content, story.config.genre.value),
-            "alignment": alignment.check(story, chapter),
-            "emotion": emotion.check_against_expected(chapter, expected_beat),
+        # 定义检查任务工厂（只创建需要运行的协程）
+        check_factories = {
+            "L1": lambda: checker.check_l1_self(chapter),
+            "L2": lambda: checker.check_l2_cross(story, chapter, hot_memory),
+            "L3": lambda: checker.check_l3_world_rules(story, chapter),
+            "originality": lambda: originality.check(chapter.content, story.config.genre.value),
+            "alignment": lambda: alignment.check(story, chapter),
+            "emotion": lambda: emotion.check_against_expected(chapter, expected_beat),
         }
 
-        # 如果指定了 only_layers，只运行那些检查
-        if only_layers:
-            tasks_to_run = {k: v for k, v in all_checks.items() if k in only_layers}
-        else:
-            tasks_to_run = all_checks
+        layers = only_layers if only_layers else set(check_factories.keys())
+        tasks_to_run = {k: check_factories[k]() for k in layers if k in check_factories}
 
         # 并行执行
         keys = list(tasks_to_run.keys())

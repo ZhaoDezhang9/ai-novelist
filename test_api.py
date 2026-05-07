@@ -30,7 +30,7 @@ req = urllib.request.Request(
 
 start = time.time()
 try:
-    resp = urllib.request.urlopen(req, timeout=180)
+    resp = urllib.request.urlopen(req, timeout=600)
     result = json.loads(resp.read())
     elapsed = time.time() - start
     story_id = result.get("id", "")

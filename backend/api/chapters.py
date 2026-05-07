@@ -74,6 +74,7 @@ async def get_chapter(story_id: str, chapter_number: int):
         "check_results": chapter.get("check_results", []),
         "alignment_score": chapter.get("alignment_score", 0),
         "originality_score": chapter.get("originality_score", 0),
+        "rewrites_count": chapter.get("rewrites_count", 0),
         "emotion_curve": chapter.get("emotion_curve", []),
     }
 
@@ -119,6 +120,10 @@ async def write_all_chapters(story_id: str, start_from: int = None):
         raise HTTPException(status_code=404, detail="故事不存在")
 
     if start_from is not None:
+        if start_from < 1:
+            raise HTTPException(status_code=400, detail="start_from 必须 >= 1")
+        if start_from > story.config.target_chapters:
+            raise HTTPException(status_code=400, detail="start_from 超出目标章节数")
         story.current_chapter = start_from - 1
 
     results = []

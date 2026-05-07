@@ -105,14 +105,17 @@ class NovelOrchestrator:
             round_num += 1
             issues = self._collect_issues(checks)
             chapter = await self.rewrite.rewrite_targeted(chapter, issues, context)
-            
+
             # 只重跑失败的检查项，提高效率
             failed_layers = {c.layer for c in checks if not c.passed}
-            checks = await self.pipeline.run_checks_parallel(
+            new_checks = await self.pipeline.run_checks_parallel(
                 story=story, chapter=chapter,
                 hot_memory=await self.memory.get_hot(story.current_chapter + 1),
                 only_layers=failed_layers,
             )
+            # 合并结果：用新检查结果替换对应层的旧结果
+            new_by_layer = {c.layer: c for c in new_checks}
+            checks = [new_by_layer.get(c.layer, c) for c in checks]
             chapter.check_results = checks
             chapter.rewrites_count = round_num
 
@@ -196,14 +199,17 @@ class NovelOrchestrator:
             generation_tracker.update(story.id, status="rewriting")
             yield {"type": "rewriting", "round": round_num, "issues_count": len(issues)}
             chapter = await self.rewrite.rewrite_targeted(chapter, issues, context)
-            
+
             # 只重跑失败的检查项
             failed_layers = {c.layer for c in checks if not c.passed}
-            checks = await self.pipeline.run_checks_parallel(
+            new_checks = await self.pipeline.run_checks_parallel(
                 story=story, chapter=chapter,
                 hot_memory=await self.memory.get_hot(chapter_num),
                 only_layers=failed_layers,
             )
+            # 合并结果：用新检查结果替换对应层的旧结果
+            new_by_layer = {c.layer: c for c in new_checks}
+            checks = [new_by_layer.get(c.layer, c) for c in checks]
             chapter.check_results = checks
             chapter.rewrites_count = round_num
 

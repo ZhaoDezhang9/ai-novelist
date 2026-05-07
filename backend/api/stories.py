@@ -55,26 +55,29 @@ async def generate_meta(req: GenerateMetaRequest):
         )
         data = json.loads(extract_json(raw))
         return {"title": data.get("title", ""), "theme": data.get("theme", "")}
-    except Exception:
+    except Exception as e:
         # 回退：从灵感中截取
         title = req.idea.strip()[:12] + ("" if len(req.idea) <= 12 else "...")
-        return {"title": title, "theme": req.idea.strip()[:100]}
+        return {"title": title, "theme": req.idea.strip()[:100], "fallback": True, "error": str(e)}
 
 
 @router.post("")
 async def create_story(req: CreateStoryRequest):
     """创建新故事"""
     orchestrator = NovelOrchestrator()
-    config = StoryConfig(
-        title=req.title,
-        genre=StoryGenre(req.genre),
-        style=StoryStyle(req.style),
-        pov=NarrativePOV(req.pov),
-        target_chapters=req.target_chapters,
-        words_per_chapter=req.words_per_chapter,
-        target_audience=req.target_audience,
-        theme=req.theme,
-    )
+    try:
+        config = StoryConfig(
+            title=req.title,
+            genre=StoryGenre(req.genre),
+            style=StoryStyle(req.style),
+            pov=NarrativePOV(req.pov),
+            target_chapters=req.target_chapters,
+            words_per_chapter=req.words_per_chapter,
+            target_audience=req.target_audience,
+            theme=req.theme,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"参数无效: {e}")
     story = await orchestrator.create_story(config)
     return {
         "id": story.id,

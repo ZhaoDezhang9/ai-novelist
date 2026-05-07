@@ -12,7 +12,6 @@ import { colors, layout, font, space, bp, scrollbar, shadows, radius, fonts } fr
 const NAV_ITEMS = [
   { path: "/", label: "小说集" },
   { path: "/create", label: "创作" },
-  { path: "/story/", label: "书房" },
   { path: "/settings", label: "设定" },
 ];
 
@@ -135,7 +134,7 @@ function AppInner() {
       />
 
       {/* Sidebar */}
-      <aside style={{
+      <aside className={`app-sidebar${sidebarOpen ? " open" : ""}`} style={{
         width: "220px",
         flexShrink: 0,
         background: colors.surface,
@@ -148,7 +147,7 @@ function AppInner() {
         left: 0,
         bottom: 0,
         zIndex: 100,
-        transform: sidebarOpen ? "translateX(0)" : undefined,
+        transition: "transform 0.25s ease",
       }}>
         {/* Brand */}
         <div style={{
@@ -179,7 +178,7 @@ function AppInner() {
             const isActive = item.path === "/"
               ? location.pathname === "/"
               : location.pathname.startsWith(item.path);
-            const iconKeys = ["home", "create", "reader", "settings"] as const;
+            const iconKeys = ["home", "create", "settings"] as const;
             return (
               <Link
                 key={item.path}
@@ -250,10 +249,11 @@ function AppInner() {
       </aside>
 
       {/* Main Content */}
-      <main style={{
+      <main className="app-main" style={{
         ...layout.main,
         overflow: "auto",
         height: "100vh",
+        marginLeft: "220px",
         paddingTop: "56px",
       }}>
         <div style={layout.page}>
@@ -270,7 +270,9 @@ function AppInner() {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         ${bp.md} {
           .mobile-header { display: flex !important; }
-          .sidebar-overlay { display: none !important; }
+          .app-sidebar { transform: translateX(-100%) !important; }
+          .app-sidebar.open { transform: translateX(0) !important; }
+          .app-main { margin-left: 0 !important; }
         }
         [data-theme="dark"] {
           --bg: #1A1714;

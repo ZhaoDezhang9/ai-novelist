@@ -44,6 +44,14 @@ export const colors = {
   primaryHover: "#5A7A4A",
   primaryMuted: "rgba(107, 142, 90, 0.12)",
   primaryBorder: "rgba(107, 142, 90, 0.25)",
+  // Aliases for backward compatibility
+  textMuted: "#8C7E72",
+  textDim: "#B8AEA4",
+  textSecondary: "#5C4E44",
+  text: "#2C2420",
+  dangerBg: "rgba(184, 74, 58, 0.12)",
+  bgElevated: "#FFFFFF",
+  warningBg: "rgba(196, 148, 58, 0.12)",
 };
 
 // ========== Dark Theme Colors ==========
@@ -83,10 +91,18 @@ export const colorsDark = {
   primaryHover: "#9DC68C",
   primaryMuted: "rgba(140, 182, 122, 0.12)",
   primaryBorder: "rgba(140, 182, 122, 0.25)",
+  // Aliases for backward compatibility
+  textMuted: "#8C7E72",
+  textDim: "#5C5248",
+  textSecondary: "#C4B8AC",
+  text: "#E8E0D8",
+  dangerBg: "rgba(212, 106, 90, 0.12)",
+  bgElevated: "#2E2A27",
+  warningBg: "rgba(212, 168, 74, 0.12)",
 };
 
 // ========== Genre Colors ==========
-export const genreColors = {
+export const genreColors: Record<string, string> = {
   xiuxian: "#6B8E5A",
   xuanhui: "#8B5CF6",
   dushi: "#3B82F6",
@@ -98,6 +114,20 @@ export const genreColors = {
   youxi: "#7C3AED",
   tiyu: "#DC2626",
   qihuan: "#D946EF",
+  "仙侠": "#6B8E5A",
+  "玄幻": "#8B5CF6",
+  "都市": "#3B82F6",
+  "科幻": "#06B6D4",
+  "灵异": "#EC4899",
+  "军事": "#92400E",
+  "历史": "#B45309",
+  "武侠": "#059669",
+  "游戏": "#7C3AED",
+  "体育": "#DC2626",
+  "奇幻": "#D946EF",
+  "言情": "#F43F5E",
+  "悬疑": "#8B5CF6",
+  "其他": "#8C7E72",
 };
 
 // ========== Genre Gradients ==========
@@ -205,7 +235,6 @@ export const card: React.CSSProperties = {
 
 export const cardInteractive: React.CSSProperties = {
   ...card, cursor: "pointer",
-  "&:hover": { boxShadow: shadows.hover, borderColor: colors.borderLight },
 };
 
 // ========== Status Badges ==========
