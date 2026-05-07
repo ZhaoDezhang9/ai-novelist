@@ -88,9 +88,10 @@ class ChapterWriter:
     def _generate_chapter_title(self, text: str) -> str:
         """从文本开头生成章节标题"""
         import re
-        # 清理空格和换行
         first_line = text.strip().split("\n")[0]
-        first_line = re.sub(r'^[第第]\d+[章節]', '', first_line).strip()
+        # 去除 "第X章", "# 第X章", "## 第X章" 等前缀
+        first_line = re.sub(r'^#+\s*第?\d+[章節]\s*', '', first_line).strip()
+        first_line = first_line.lstrip('# ')
         # 取前12字
         title = first_line[:12].strip("，。！？…,;.!? \t")
         return title or "无题"

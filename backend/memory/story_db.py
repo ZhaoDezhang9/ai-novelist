@@ -41,6 +41,15 @@ MIGRATIONS = [
     (5, """
         CREATE INDEX IF NOT EXISTS idx_chapters_story_num ON chapters(story_id, chapter_number);
     """),
+    (6, """
+        -- 删除重复章节，保留每个(story_id, chapter_number)最新的那条
+        DELETE FROM chapters WHERE rowid NOT IN (
+            SELECT MAX(rowid) FROM chapters GROUP BY story_id, chapter_number
+        );
+        -- 添加唯一约束
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_story_chapter_unique
+            ON chapters(story_id, chapter_number);
+    """),
 ]
 
 
@@ -169,9 +178,8 @@ async def save_chapter(story_id: str, chapter_number: int, data: dict):
         await db.execute(
             """INSERT INTO chapters (id, story_id, chapter_number, data, content, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
-                   story_id=excluded.story_id,
-                   chapter_number=excluded.chapter_number,
+               ON CONFLICT(story_id, chapter_number) DO UPDATE SET
+                   id=excluded.id,
                    data=excluded.data,
                    content=excluded.content,
                    updated_at=excluded.updated_at""",
@@ -184,7 +192,7 @@ async def save_chapter(story_id: str, chapter_number: int, data: dict):
 async def load_chapter(story_id: str, chapter_number: int) -> dict | None:
     async with get_db() as db:
         async with db.execute(
-            "SELECT data, content FROM chapters WHERE story_id=? AND chapter_number=?",
+            "SELECT data, content FROM chapters WHERE story_id=? AND chapter_number=? ORDER BY updated_at DESC LIMIT 1",
             (story_id, chapter_number),
         ) as cursor:
             row = await cursor.fetchone()
