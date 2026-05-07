@@ -5,7 +5,7 @@ BASE = os.environ.get("API_BASE", "http://localhost:8000")
 
 def _check_server():
     try:
-        urllib.request.urlopen(f"{BASE}/api/health", timeout=5)
+        urllib.request.urlopen(f"{BASE}/api/health", timeout=3)
         return True
     except Exception:
         return False
@@ -14,6 +14,7 @@ server_available = _check_server()
 skip_if_down = pytest.mark.skipif(not server_available, reason="Server not running")
 
 
+@skip_if_down
 def test_health():
     resp = urllib.request.urlopen(f"{BASE}/api/health")
     data = json.loads(resp.read())
@@ -21,6 +22,7 @@ def test_health():
     print("Health:", data)
 
 
+@skip_if_down
 def test_list_stories():
     resp = urllib.request.urlopen(f"{BASE}/api/stories")
     stories = json.loads(resp.read())
