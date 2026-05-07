@@ -1,10 +1,11 @@
 """故事管理 API 路由"""
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from backend.core.models import Story, StoryConfig, StoryGenre, StoryStyle, NarrativePOV
+from pydantic import BaseModel, field_validator
+from backend.core.models import StoryConfig, StoryGenre, StoryStyle, NarrativePOV
 from backend.core.orchestrator import NovelOrchestrator
 from backend.core.llm_client import fast_llm
 from backend.core.utils import extract_json
+from backend.core.validators import validate_no_injection, validate_length
 from backend.memory import story_db
 import json
 
@@ -14,6 +15,17 @@ router = APIRouter()
 class GenerateMetaRequest(BaseModel):
     idea: str
     genre: str = "玄幻"
+
+    @field_validator("idea")
+    @classmethod
+    def sanitize_idea(cls, v):
+        v = validate_no_injection(v)
+        return validate_length(v)
+
+    @field_validator("genre")
+    @classmethod
+    def sanitize_genre(cls, v):
+        return validate_no_injection(v)
 
 
 class CreateStoryRequest(BaseModel):
@@ -25,6 +37,28 @@ class CreateStoryRequest(BaseModel):
     words_per_chapter: int = 3000
     target_audience: str = "大众读者"
     theme: str = ""
+
+    @field_validator("title", "genre", "style", "pov", "target_audience", "theme")
+    @classmethod
+    def sanitize_strings(cls, v):
+        if not isinstance(v, str):
+            return v
+        v = validate_no_injection(v)
+        return validate_length(v)
+
+    @field_validator("target_chapters")
+    @classmethod
+    def check_chapters(cls, v):
+        if v < 1 or v > 500:
+            raise ValueError("章节数必须在 1-500 之间")
+        return v
+
+    @field_validator("words_per_chapter")
+    @classmethod
+    def check_words(cls, v):
+        if v < 500 or v > 20000:
+            raise ValueError("每章字数必须在 500-20000 之间")
+        return v
 
 
 class StoryListItem(BaseModel):
@@ -62,19 +96,19 @@ async def generate_meta(req: GenerateMetaRequest):
 
 
 @router.post("")
-async def create_story(req: CreateStoryRequest):
+async def create_story(body: CreateStoryRequest):
     """创建新故事"""
     orchestrator = NovelOrchestrator()
     try:
         config = StoryConfig(
-            title=req.title,
-            genre=StoryGenre(req.genre),
-            style=StoryStyle(req.style),
-            pov=NarrativePOV(req.pov),
-            target_chapters=req.target_chapters,
-            words_per_chapter=req.words_per_chapter,
-            target_audience=req.target_audience,
-            theme=req.theme,
+            title=body.title,
+            genre=StoryGenre(body.genre),
+            style=StoryStyle(body.style),
+            pov=NarrativePOV(body.pov),
+            target_chapters=body.target_chapters,
+            words_per_chapter=body.words_per_chapter,
+            target_audience=body.target_audience,
+            theme=body.theme,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"参数无效: {e}")

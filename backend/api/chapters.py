@@ -157,7 +157,6 @@ async def write_next_chapter_stream(story_id: str):
 
 @router.post("/{story_id}/chapter/{chapter_number}/rewrite")
 async def rewrite_chapter(story_id: str, chapter_number: int):
-    """单独改写某一章"""
     orchestrator = NovelOrchestrator()
     story = await orchestrator.load_story(story_id)
     if not story:
@@ -167,34 +166,13 @@ async def rewrite_chapter(story_id: str, chapter_number: int):
     if not chapter_data:
         raise HTTPException(status_code=404, detail="章节不存在")
 
-    from backend.core.models import ChapterRecord
-
-    chapter = ChapterRecord(
-        story_id=story_id,
-        chapter_number=chapter_number,
-        content=chapter_data.get("content", ""),
-        word_count=chapter_data.get("word_count", 0),
-    )
-
-    # 重新跑质检
-    checks = await orchestrator.pipeline.run_checks_parallel(story, chapter)
-
-    # 收集问题并改写
-    issues = orchestrator._collect_issues(checks)
-    if issues:
-        context = await orchestrator.context_builder.build_master_prompt(
-            story=story,
-            hot_memory=await orchestrator.memory.get_hot(chapter_number),
-            warm_memory=orchestrator.memory.get_warm(),
-            cold_memory=orchestrator.memory.get_cold(),
-        )
-        chapter = await orchestrator.rewrite.rewrite_targeted(chapter, issues, context)
-        await story_db.save_chapter(story_id, chapter_number, chapter.model_dump())
+    chapter = await orchestrator.rewrite_chapter(story, chapter_number)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="章节不存在")
 
     return {
         "chapter_number": chapter.chapter_number,
         "content": chapter.content,
         "word_count": chapter.word_count,
-        "issues_found": len(issues),
         "rewrites_count": chapter.rewrites_count,
     }

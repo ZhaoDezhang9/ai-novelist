@@ -117,12 +117,26 @@ class EmotionSample(BaseModel):
     pleasure: float      # 0-10 愉悦
 
 
+class QualityScores(BaseModel):
+    """多维度质量评分 (0-10)"""
+    coherence: float = 7.0      # 一致性：L1+L2+L3 综合
+    originality: float = 7.0    # 原创性
+    alignment: float = 7.0      # 大纲对齐
+    emotion: float = 7.0        # 情感曲线匹配
+    style: float = 7.0          # 风格匹配
+    overall: float = 7.0        # 加权总分
+
+    def min_dimension(self) -> float:
+        return min(self.coherence, self.originality, self.alignment, self.emotion, self.style)
+
+
 class CheckResult(BaseModel):
     """质量检查结果"""
     passed: bool
-    layer: str  # L1/L2/L3
+    layer: str  # L1/L2/L3/quality/multi_dim
     issues: list[dict] = []  # [{location, type, description, severity}]
     scores: dict = {}
+    quality_scores: Optional[QualityScores] = None  # 多维度评分（multi_dim检查时填充）
 
 
 class ChapterRecord(BaseModel):

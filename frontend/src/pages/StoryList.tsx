@@ -307,7 +307,7 @@ function SkeletonCard() {
 }
 
 export default function StoryList() {
-  const { data: stories, loading, error, refetch } = useApi<StoryListItem[]>(() => api.listStories(), []);
+  const { data: stories, loading, error, refetch } = useApi<StoryListItem[]>((signal) => api.listStories({ signal }), []);
 
   const totalChapters = stories?.reduce((sum, s) => sum + s.current_chapter, 0) || 0;
 

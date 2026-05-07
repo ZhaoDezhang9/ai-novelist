@@ -1,14 +1,16 @@
-"""LLM 客户端 - 统一接口，支持任意 OpenAI 兼容 API，设置热更新"""
+"""LLM 客户端 - 统一接口，支持任意 OpenAI 兼容 API，设置热更新，模型分级路由"""
 from openai import AsyncOpenAI, OpenAI
 from .config import get_settings
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, Literal
+
+TaskType = Literal["creative", "assessment", "planning"]
 
 
 class LLMClient:
     """异步 LLM 客户端 — 每次调用时读取最新配置，支持热更新"""
 
-    def __init__(self, use_fast: bool = False):
-        self.use_fast = use_fast
+    def __init__(self, tier: Literal["creative", "assessment", "planning"] = "creative"):
+        self.tier = tier
         self._client: Optional[AsyncOpenAI] = None
         self._sync_client: Optional[OpenAI] = None
         self._last_api_key = ""
@@ -27,7 +29,12 @@ class LLMClient:
     @property
     def model(self) -> str:
         settings = get_settings()
-        return settings.llm_fast_model if self.use_fast else settings.llm_model
+        if self.tier == "creative":
+            return settings.llm_model
+        elif self.tier == "assessment":
+            return settings.llm_fast_model
+        else:
+            return settings.llm_cheap_model
 
     @property
     def client(self):
@@ -99,6 +106,17 @@ class LLMClient:
         return resp.choices[0].message.content or ""
 
 
-# 全局实例
-main_llm = LLMClient(use_fast=False)
-fast_llm = LLMClient(use_fast=True)
+# 全局实例 - 按任务类型分级
+main_llm = LLMClient(tier="creative")       # 创意写作：高质量模型
+fast_llm = LLMClient(tier="assessment")     # 质量评估：中档模型
+planning_llm = LLMClient(tier="planning")   # 规划任务：便宜模型
+
+
+def get_llm_for_task(task: TaskType) -> LLMClient:
+    """LLM Gateway: 根据任务类型自动选择模型"""
+    if task == "creative":
+        return main_llm
+    elif task == "assessment":
+        return fast_llm
+    else:
+        return planning_llm

@@ -3,7 +3,7 @@ import json
 import re
 import logging
 from backend.core.models import Story, WorldBible, StyleVector
-from backend.core.llm_client import main_llm
+from backend.core.llm_client import main_llm, planning_llm
 from backend.core.utils import extract_json
 from backend.generation.prompt_templates import (
     outline_system_prompt, outline_user_prompt,
@@ -20,11 +20,11 @@ class OutlineEngine:
         pass
 
     async def generate(self, story: Story) -> list[dict]:
-        """生成完整大纲"""
+        """生成完整大纲（使用planning模型降低成本）"""
         system = outline_system_prompt(story)
         user = outline_user_prompt(story)
 
-        raw = await main_llm.chat(system, user, temperature=0.9, max_tokens=16000)
+        raw = await planning_llm.chat(system, user, temperature=0.9, max_tokens=16000)
         outline = self._parse_outline(raw, story.config.target_chapters)
 
         # 注入转折点
@@ -36,19 +36,19 @@ class OutlineEngine:
         return outline
 
     async def generate_world_bible(self, story: Story) -> WorldBible:
-        """生成世界观圣经"""
+        """生成世界观圣经（使用planning模型降低成本）"""
         system = world_bible_system_prompt(story)
         user = f"请为{story.config.genre}小说《{story.config.title}》构建世界观。"
 
-        raw = await main_llm.chat(system, user, temperature=0.8, max_tokens=4000)
+        raw = await planning_llm.chat(system, user, temperature=0.8, max_tokens=4000)
         return self._parse_world_bible(raw)
 
     async def generate_characters(self, story: Story) -> list[dict]:
-        """生成角色设定"""
+        """生成角色设定（使用planning模型降低成本）"""
         system = character_system_prompt(story)
         user = f"请为{story.config.genre}小说《{story.config.title}》设计主要角色阵容。"
 
-        raw = await main_llm.chat(system, user, temperature=0.85, max_tokens=8000)
+        raw = await planning_llm.chat(system, user, temperature=0.85, max_tokens=8000)
         try:
             data = json.loads(extract_json(raw))
             if isinstance(data, dict):

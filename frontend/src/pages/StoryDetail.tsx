@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, ChapterInfo, ChapterDetail, type StoryDetail as StoryDetailType } from "../services/api";
-import { useGeneration } from "../GenerationContext";
+import { useGenerationStore } from "../stores/generationStore";
 import { colors, space, font, btn, card, badge, layout, section } from "../styles";
 
 type Tab = "chapters" | "outline" | "world" | "foreshadowing";
@@ -22,7 +22,10 @@ const severityBg: Record<string, string> = {
 
 export default function StoryDetail() {
   const { id } = useParams<{ id: string }>();
-  const { getGeneration, isGenerating, startGeneration, cancelGeneration } = useGeneration();
+  const getGeneration = useGenerationStore((s) => s.getGeneration);
+  const isGenerating = useGenerationStore((s) => s.isGenerating);
+  const startGeneration = useGenerationStore((s) => s.startGeneration);
+  const cancelGeneration = useGenerationStore((s) => s.cancelGeneration);
   const [story, setStory] = useState<StoryDetailType | null>(null);
   const [chapters, setChapters] = useState<ChapterInfo[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("chapters");
@@ -172,7 +175,10 @@ export default function StoryDetail() {
     <div>
       {/* Header */}
       <div style={{ marginBottom: space[6] }}>
-        <Link to="/" style={{ color: colors.textMuted, fontSize: "13px", textDecoration: "none" }}>&larr; 返回</Link>
+        <div style={{ display: "flex", gap: space[4], alignItems: "center" }}>
+          <Link to="/" style={{ color: colors.textMuted, fontSize: "13px", textDecoration: "none" }}>&larr; 返回</Link>
+          <Link to={`/story/${id}/reader`} style={{ color: colors.accent, fontSize: "13px", textDecoration: "none" }}>阅读模式</Link>
+        </div>
         <h1 style={{ ...font["2xl"], margin: "8px 0 4px", fontWeight: 700 }}>{cfg.title || "未命名"}</h1>
         <div style={{ ...font.sm, color: colors.textMuted }}>
           {cfg.genre} &middot; {cfg.style} &middot; {cfg.pov} &middot; {story.current_chapter}/{cfg.target_chapters} 章
@@ -268,7 +274,7 @@ export default function StoryDetail() {
       {gen && gen.contentChunks.length > 0 && (
         <div style={{ ...card, marginBottom: space[5], padding: space[5],
           maxHeight: "400px", overflow: "auto", whiteSpace: "pre-wrap" as const,
-          fontSize: "14px", lineHeight: "1.9", color: "#d0d0d0", fontFamily: "inherit" }}>
+          fontSize: "14px", lineHeight: "1.9", color: colors.fg, fontFamily: "inherit" }}>
           {gen.contentChunks.join("")}
           {streaming && <span style={{ animation: "blink 0.8s infinite", color: colors.primary }}>&#9608;</span>}
           <div style={{ ...font.xs, color: colors.textMuted, marginTop: space[3], paddingTop: space[3], borderTop: `1px solid ${colors.border}` }}>
@@ -331,7 +337,7 @@ export default function StoryDetail() {
                     background: selectedChapter?.chapter_number === ch.chapter_number ? "rgba(34,197,94,0.1)" : "transparent",
                     border: "none",
                     borderRadius: "4px",
-                    color: selectedChapter?.chapter_number === ch.chapter_number ? colors.primary : "#aaa",
+                    color: selectedChapter?.chapter_number === ch.chapter_number ? colors.primary : colors.fgSecondary,
                     cursor: "pointer",
                     marginBottom: "2px",
                     transition: "background 0.15s",
@@ -445,7 +451,7 @@ export default function StoryDetail() {
                   fontSize: focusMode ? "16px" : "15px",
                   lineHeight: focusMode ? "2.0" : "1.9",
                   whiteSpace: "pre-wrap" as const,
-                  color: "#d0d0d0",
+                  color: colors.fg,
                   maxHeight: focusMode ? "85vh" : "70vh",
                   overflow: "auto",
                   position: "relative",
@@ -485,7 +491,7 @@ export default function StoryDetail() {
                 第{node.chapter}章 &middot; {node.title}
                 {node.act && <span style={{ marginLeft: space[2], fontSize: "11px", color: colors.textMuted }}>[{node.act}]</span>}
               </div>
-              <div style={{ color: "#bbb", marginBottom: space[1] }}>{node.goal}</div>
+              <div style={{ color: colors.fgSecondary, marginBottom: space[1] }}>{node.goal}</div>
               <div style={{ color: colors.textMuted }}>
                 情绪：{node.emotional_beat}
                 {node.twist_note && " &middot; 转折：" + node.twist_note}
@@ -500,7 +506,7 @@ export default function StoryDetail() {
         <div>
           <Section title="世界观设定">{story.world_bible?.setting || "待生成"}</Section>
           <Section title="世界规则">
-            <ul style={{ color: "#bbb", lineHeight: "2", paddingLeft: space[5] }}>
+            <ul style={{ color: colors.fgSecondary, lineHeight: "2", paddingLeft: space[5] }}>
               {(story.world_bible?.rules || []).map((r, i) => <li key={i}>{r}</li>)}
               {!story.world_bible?.rules?.length && <li style={{ color: colors.textDim }}>无</li>}
             </ul>
@@ -508,7 +514,7 @@ export default function StoryDetail() {
           <Section title="势力">
             <div style={{ display: "flex", flexWrap: "wrap", gap: space[2] }}>
               {(story.world_bible?.factions || []).map((f, i) => (
-                <span key={i} style={{ padding: `${space[1]} ${space[3]}`, background: colors.bgElevated, borderRadius: "4px", fontSize: "13px", color: "#ccc" }}>{f}</span>
+                <span key={i} style={{ padding: `${space[1]} ${space[3]}`, background: colors.bgElevated, borderRadius: "4px", fontSize: "13px", color: colors.fgSecondary }}>{f}</span>
               ))}
             </div>
           </Section>
@@ -517,7 +523,7 @@ export default function StoryDetail() {
               {(story.characters || []).map((c, i) => (
                 <div key={i} style={{ ...card, padding: space[3] }}>
                   <div style={{ fontWeight: 600, color: colors.primary }}>{c.name} ({c.role})</div>
-                  <div style={{ fontSize: "13px", color: "#aaa", marginTop: space[1] }}>{c.traits || c.personality}</div>
+                  <div style={{ fontSize: "13px", color: colors.fgSecondary, marginTop: space[1] }}>{c.traits || c.personality}</div>
                   <div style={{ fontSize: "12px", color: colors.textMuted, marginTop: space[1] }}>{c.arc}</div>
                 </div>
               ))}
@@ -569,7 +575,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div style={{ marginBottom: space[6] }}>
       <h3 style={{ ...font.md, fontWeight: 600, color: colors.primary, marginBottom: space[2] }}>{title}</h3>
-      <div style={{ color: "#bbb", lineHeight: "1.8", fontSize: "14px" }}>{children}</div>
+      <div style={{ color: colors.fgSecondary, lineHeight: "1.8", fontSize: "14px" }}>{children}</div>
     </div>
   );
 }

@@ -89,10 +89,10 @@ class EmotionalCurveAnalyzer:
             return []
 
     async def check_against_expected(self, chapter: ChapterRecord, expected_beat: str) -> CheckResult:
-        """检查情感曲线是否匹配预期"""
+        """检查情感曲线是否匹配预期 - 0-10评分"""
         samples = await self.analyze(chapter)
         if not samples:
-            return CheckResult(passed=True, layer="emotion", issues=[], scores={"emotion_match": 1.0})
+            return CheckResult(passed=True, layer="emotion", issues=[], scores={"emotion_match": 10.0})
 
         avg_tension = sum(s.tension for s in samples) / len(samples)
         avg_pleasure = sum(s.pleasure for s in samples) / len(samples)
@@ -102,15 +102,15 @@ class EmotionalCurveAnalyzer:
         expected = EMOTIONAL_BEAT_TEMPLATES.get(expected_beat)
 
         if not expected:
-            return CheckResult(passed=True, layer="emotion", issues=[], scores={"emotion_match": 1.0})
+            return CheckResult(passed=True, layer="emotion", issues=[], scores={"emotion_match": 10.0})
 
         tension_diff = abs(avg_tension - expected["tension"])
         sadness_diff = abs(avg_sadness - expected["sadness"])
         pleasure_diff = abs(avg_pleasure - expected["pleasure"])
         total_diff = (tension_diff + sadness_diff + pleasure_diff) / 3
 
-        score = max(0, 1.0 - total_diff / 10)
-        passed = score > 0.5
+        score = max(0, 10.0 - total_diff)
+        passed = score >= 5
 
         issues = []
         if not passed:

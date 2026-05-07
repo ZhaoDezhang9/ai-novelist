@@ -196,84 +196,109 @@ export interface StreamEvent {
 
 // ========== Fetch Helper ==========
 
-async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const detail = await res.text().catch(() => res.statusText);
-    throw new Error(detail || `请求失败 (${res.status})`);
+interface FetchOptions extends RequestInit {
+  retries?: number;
+  retryDelay?: number;
+}
+
+async function apiFetch<T>(url: string, init?: FetchOptions): Promise<T> {
+  const { retries = 0, retryDelay = 1000, ...fetchInit } = init || {};
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, retryDelay * Math.pow(2, attempt - 1)));
+      }
+      const res = await fetch(url, fetchInit);
+      if (!res.ok) {
+        const detail = await res.text().catch(() => res.statusText);
+        const err = new Error(detail || `请求失败 (${res.status})`);
+        if (res.status >= 500 && attempt < retries) { lastError = err; continue; }
+        throw err;
+      }
+      return res.json();
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw e;
+      lastError = e instanceof Error ? e : new Error("请求失败");
+      if (attempt >= retries) throw lastError;
+    }
   }
-  return res.json();
+  throw lastError || new Error("请求失败");
 }
 
 // ========== API ==========
 
+export interface ApiCallOptions {
+  signal?: AbortSignal;
+}
+
 export const api = {
-  // Stories
-  createStory: async (config: StoryConfig): Promise<CreateStoryResponse> =>
+  createStory: async (config: StoryConfig, opts?: ApiCallOptions): Promise<CreateStoryResponse> =>
     apiFetch<CreateStoryResponse>(`${BASE}/stories`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
+      signal: opts?.signal,
     }),
 
-  generateMeta: async (idea: string, genre: string): Promise<{ title: string; theme: string }> =>
+  generateMeta: async (idea: string, genre: string, opts?: ApiCallOptions): Promise<{ title: string; theme: string }> =>
     apiFetch<{ title: string; theme: string }>(`${BASE}/stories/generate-meta`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idea, genre }),
+      signal: opts?.signal,
     }),
 
-  listStories: async (): Promise<StoryListItem[]> =>
-    apiFetch<StoryListItem[]>(`${BASE}/stories`),
+  listStories: async (opts?: ApiCallOptions): Promise<StoryListItem[]> =>
+    apiFetch<StoryListItem[]>(`${BASE}/stories`, { signal: opts?.signal, retries: 2 }),
 
-  getStory: async (id: string): Promise<StoryDetail> =>
-    apiFetch<StoryDetail>(`${BASE}/stories/${id}`),
+  getStory: async (id: string, opts?: ApiCallOptions): Promise<StoryDetail> =>
+    apiFetch<StoryDetail>(`${BASE}/stories/${id}`, { signal: opts?.signal, retries: 2 }),
 
   deleteStory: async (id: string): Promise<void> => {
     const res = await fetch(`${BASE}/stories/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("删除失败");
   },
 
-  // Chapters
-  listChapters: async (storyId: string): Promise<ChapterInfo[]> =>
-    apiFetch<ChapterInfo[]>(`${BASE}/chapters/${storyId}/list`),
+  listChapters: async (storyId: string, opts?: ApiCallOptions): Promise<ChapterInfo[]> =>
+    apiFetch<ChapterInfo[]>(`${BASE}/chapters/${storyId}/list`, { signal: opts?.signal, retries: 2 }),
 
-  getChapter: async (storyId: string, num: number): Promise<ChapterDetail> =>
-    apiFetch<ChapterDetail>(`${BASE}/chapters/${storyId}/chapter/${num}`),
+  getChapter: async (storyId: string, num: number, opts?: ApiCallOptions): Promise<ChapterDetail> =>
+    apiFetch<ChapterDetail>(`${BASE}/chapters/${storyId}/chapter/${num}`, { signal: opts?.signal, retries: 2 }),
 
-  writeNext: async (storyId: string): Promise<WriteNextResponse> =>
-    apiFetch<WriteNextResponse>(`${BASE}/chapters/${storyId}/write-next`, { method: "POST" }),
+  writeNext: async (storyId: string, opts?: ApiCallOptions): Promise<WriteNextResponse> =>
+    apiFetch<WriteNextResponse>(`${BASE}/chapters/${storyId}/write-next`, { method: "POST", signal: opts?.signal }),
 
   writeNextStream: (storyId: string): EventSource =>
     new EventSource(`${BASE}/chapters/${storyId}/write-next-stream`),
 
-  writeAll: async (storyId: string, from?: number): Promise<{ chapters_written: number; chapters: ChapterInfo[] }> => {
+  writeAll: async (storyId: string, from?: number, opts?: ApiCallOptions): Promise<{ chapters_written: number; chapters: ChapterInfo[] }> => {
     const url = `${BASE}/chapters/${storyId}/write-all${from ? `?start_from=${from}` : ""}`;
-    return apiFetch(url, { method: "POST" });
+    return apiFetch(url, { method: "POST", signal: opts?.signal });
   },
 
-  rewriteChapter: async (storyId: string, chapterNumber: number): Promise<RewriteResponse> =>
-    apiFetch<RewriteResponse>(`${BASE}/chapters/${storyId}/chapter/${chapterNumber}/rewrite`, { method: "POST" }),
+  rewriteChapter: async (storyId: string, chapterNumber: number, opts?: ApiCallOptions): Promise<RewriteResponse> =>
+    apiFetch<RewriteResponse>(`${BASE}/chapters/${storyId}/chapter/${chapterNumber}/rewrite`, { method: "POST", signal: opts?.signal }),
 
-  // Generation Status
-  getGenerationStatus: async (storyId: string): Promise<{
+  getGenerationStatus: async (storyId: string, opts?: ApiCallOptions): Promise<{
     story_id: string; chapter_number: number; status: string;
     tokens_received: number; content_preview: string; updated_at: string;
-  }> => apiFetch(`${BASE}/chapters/${storyId}/generation-status`),
+  }> => apiFetch(`${BASE}/chapters/${storyId}/generation-status`, { signal: opts?.signal }),
 
-  getActiveGenerations: async (): Promise<Array<{
+  getActiveGenerations: async (opts?: ApiCallOptions): Promise<Array<{
     story_id: string; chapter_number: number; status: string;
     tokens_received: number; updated_at: string;
-  }>> => apiFetch(`${BASE}/chapters/generation-active`),
+  }>> => apiFetch(`${BASE}/chapters/generation-active`, { signal: opts?.signal }),
 
-  // Settings
-  getSettings: async (): Promise<AppSettings> =>
-    apiFetch<AppSettings>(`${BASE}/settings`),
+  getSettings: async (opts?: ApiCallOptions): Promise<AppSettings> =>
+    apiFetch<AppSettings>(`${BASE}/settings`, { signal: opts?.signal, retries: 2 }),
 
-  updateSettings: async (settings: Partial<AppSettings>): Promise<AppSettings> =>
+  updateSettings: async (settings: Partial<AppSettings>, opts?: ApiCallOptions): Promise<AppSettings> =>
     apiFetch<AppSettings>(`${BASE}/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
+      signal: opts?.signal,
     }),
 };

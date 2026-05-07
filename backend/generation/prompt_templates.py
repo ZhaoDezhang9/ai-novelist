@@ -288,8 +288,72 @@ def chapter_writing_user(story: Story, chapter_num: int, outline_node: dict) -> 
 
 # ========== 质检提示词 ==========
 
+def multi_dimension_assessment() -> str:
+    """获取多维度质量评估提示词（合并L1+L2+L3+原创性+对齐+情感）"""
+    return _load_prompt(
+        "quality/multi_dim.txt",
+        """你是一位资深小说质量评估师，从5个维度对章节进行0-10分评估。
+
+{context}
+
+【评估维度】
+
+1. 一致性 coherence (0-10)：检查三层一致性
+   - 章节自身：时间线、空间、角色、道具是否自洽？
+   - 跨章衔接：与前文设定、角色状态、时间连续性是否一致？
+   - 世界观合规：是否违反世界规则？
+   评分锚点：10=完美无矛盾 7=1-2处小问题 5=明显矛盾 3=多处严重矛盾
+
+2. 原创性 originality (0-10)：
+   - 是否有模板化套路（退婚流、废柴觉醒、老爷爷传功等）？
+   - 句式是否重复？词汇是否多样？
+   - 情节转折是否有新意？
+   评分锚点：10=高度原创 7=基本原创少量模板 5=模板化明显 3=严重模板化
+
+3. 大纲对齐 alignment (0-10)：
+   - 本章情节点是否覆盖大纲要求？
+   - 情绪基调是否匹配大纲？
+   - 关键角色是否出场？
+   评分锚点：10=完美对齐且精彩发挥 7=基本对齐1-2遗漏 5=偏离较大 3=严重偏离
+
+4. 情感曲线 emotion (0-10)：
+   - 情感节奏是否与预期情绪基调匹配？
+   - 情感转变是否自然？
+   - 高潮点位置是否合理？
+   - 结尾是否有情感余韵？
+   评分锚点：10=情感精准且有力 7=基本匹配有小偏差 5=明显不匹配 3=情感混乱
+
+5. 风格匹配 style (0-10)：
+   - 文风是否与设定风格一致？
+   - 对话占比、句长、段落是否符合风格约束？
+   - 视角是否统一？
+   - 禁用模式是否触发？
+   评分锚点：10=风格完美 7=基本一致 5=多处偏离 3=风格失控
+
+【评分规则】
+- 每个维度独立评分0-10，不要互相影响
+- 评分要严格：7分已是"较好"，9分以上极少见
+- 加权总分 = coherence*0.25 + originality*0.20 + alignment*0.25 + emotion*0.15 + style*0.15
+
+【输出JSON格式】
+{{
+  "coherence": 0-10,
+  "originality": 0-10,
+  "alignment": 0-10,
+  "emotion": 0-10,
+  "style": 0-10,
+  "overall": 加权总分,
+  "issues": [
+    {{"type": "coherence/originality/alignment/emotion/style", "severity": "critical/high/medium/low", "location": "第X段", "description": "问题描述", "fix_suggestion": "修改建议"}}
+  ],
+  "strengths": ["本章亮点1", "亮点2"],
+  "rewrite_needed": true/false（任一维度<5或总分<6则为true）
+}}"""
+    )
+
+
 def consistency_check_l1() -> str:
-    """获取一致性检查L1提示词"""
+    """获取一致性检查L1提示词（保留用于单独重跑场景）"""
     return _load_prompt(
         "quality/consistency.txt",
         """你是一位有15年经验的小说校对员，以严苛著称，连标点错误都不放过。
@@ -301,27 +365,27 @@ def consistency_check_l1() -> str:
 4. 道具：关键道具是否凭空出现或消失？
 5. 视角：视角是否保持一致？有无信息泄露（角色不该知道的知道了）？
 
-评分标准：
-- 0.9+：完美无瑕
-- 0.7-0.9：有1-2处小问题但不影响阅读
-- 0.5-0.7：有明显矛盾需要修改
-- <0.5：多处矛盾，需要大幅修改
+评分标准（0-10分制）：
+- 9-10：完美无瑕
+- 7-8：有1-2处小问题但不影响阅读
+- 5-6：有明显矛盾需要修改
+- <5：多处矛盾，需要大幅修改
 
 输出JSON：
-{
-  "passed": true/false（0.7以上通过）,
+{{
+  "passed": true/false（7以上通过）,
+  "score": 0-10,
   "issues": [
-    {"type": "timeline/space/character/prop/pov", "location": "第X段落", "description": "具体问题", "severity": "critical/high/medium/low", "fix_suggestion": "修改建议"}
-  ],
-  "score": 0.0-1.0
-}"""
+    {{"type": "timeline/space/character/prop/pov", "location": "第X段落", "description": "具体问题", "severity": "critical/high/medium/low", "fix_suggestion": "修改建议"}}
+  ]
+}}"""
     )
 
 
 def consistency_check_l2() -> str:
     """获取一致性检查L2提示词"""
     return _load_prompt(
-        "quality/consistency.txt",  # 注意：这里也应该有自己的文件，但任务要求只有一个consistency.txt
+        "quality/consistency.txt",
         """你是一位跨章节连续性检查专家，专门追踪长篇小说中的设定矛盾。
 
 对照以下前文设定，检查本章是否出现不一致：
@@ -334,27 +398,27 @@ def consistency_check_l2() -> str:
 4. 伏笔回收：如果回收了前文伏笔，细节是否与埋设时一致？
 5. 关系连续性：角色间的关系变化是否有铺垫，还是突然翻转？
 
-评分标准：
-- 0.9+：与前文完美衔接
-- 0.7-0.9：有1-2处小矛盾
-- 0.5-0.7：有明显断裂感
-- <0.5：严重的设定矛盾
+评分标准（0-10分制）：
+- 9-10：与前文完美衔接
+- 7-8：有1-2处小矛盾
+- 5-6：有明显断裂感
+- <5：严重的设定矛盾
 
 输出JSON：
-{
+{{
   "passed": true/false,
+  "score": 0-10,
   "issues": [
-    {"type": "character/time/world/foreshadow/relationship", "location": "位置", "description": "矛盾描述", "severity": "critical/high/medium/low", "evidence": "前文原文引用", "fix_suggestion": "修改建议"}
-  ],
-  "score": 0.0-1.0
-}"""
+    {{"type": "character/time/world/foreshadow/relationship", "location": "位置", "description": "矛盾描述", "severity": "critical/high/medium/low", "evidence": "前文原文引用", "fix_suggestion": "修改建议"}}
+  ]
+}}"""
     )
 
 
 def consistency_check_l3() -> str:
     """获取一致性检查L3提示词"""
     return _load_prompt(
-        "quality/consistency.txt",  # 注意：这里也应该有自己的文件，但任务要求只有一个consistency.txt
+        "quality/consistency.txt",
         """你是一位世界观守卫者，你的唯一职责是确保任何章节都不违反世界观铁律。
 
 世界观铁律（绝对不可违反）：
@@ -370,15 +434,21 @@ def consistency_check_l3() -> str:
 2. 是否出现了世界观中不存在的物质/技术/势力？
 3. 是否违反了世界运行的基本物理/魔法规则？
 
+评分标准（0-10分制）：
+- 9-10：完全合规
+- 7-8：1-2处擦边球
+- 5-6：有违规需修改
+- <5：严重违规
+
 输出JSON：
-{
+{{
   "passed": true/false,
+  "score": 0-10,
   "violations": [
-    {"rule": "违反的规则原文", "evidence": "章节中的违规原文", "severity": "critical/high", "fix_suggestion": "具体修改方案"}
+    {{"rule": "违反的规则原文", "evidence": "章节中的违规原文", "severity": "critical/high", "fix_suggestion": "具体修改方案"}}
   ],
-  "compliant_rules": ["通过的规则列表"],
-  "score": 0.0-1.0
-}"""
+  "compliant_rules": ["通过的规则列表"]
+}}"""
     )
 
 
@@ -409,21 +479,21 @@ def originality_check_prompt() -> str:
    - 角色说话方式是否有区分度？
    - 是否有无推动剧情的寒暄对话？
 
-评分标准：
-- 0.9+：原创性极高，有独特的表达和构思
-- 0.7-0.9：基本原创，有少量模板痕迹
-- 0.5-0.7：模板化明显，需要改写
-- <0.5：严重模板化
+评分标准（0-10分制）：
+- 9-10：原创性极高，有独特的表达和构思
+- 7-8：基本原创，有少量模板痕迹
+- 5-6：模板化明显，需要改写
+- <5：严重模板化
 
 输出JSON：
-{
-  "passed": true/false（0.7以上通过）,
-  "overall_score": 0.0-1.0,
+{{
+  "passed": true/false（7以上通过）,
+  "overall_score": 0-10,
   "issues": [
-    {"type": "sentence_repetition/plot_template/vocab_repeat/dialogue_ai", "location": "位置", "description": "问题描述", "severity": "high/medium/low"}
+    {{"type": "sentence_repetition/plot_template/vocab_repeat/dialogue_ai", "location": "位置", "description": "问题描述", "severity": "high/medium/low"}}
   ],
   "rewrite_suggestions": ["具体改写方向1（不同于原文的写法）", "改写方向2"]
-}
+}}
 
 【特别禁止的模式列表】
 - 退婚流：被退婚→觉醒→逆袭
@@ -452,21 +522,21 @@ def alignment_check_prompt() -> str:
 4. 意外添加：是否有大纲未提及的新设定？（标记为可能的好创意或幻觉）
 5. 章尾铺垫：是否为下一章做好了自然过渡？
 
-评分标准：
-- 0.9+：完全对齐，且有超出大纲的精彩发挥
-- 0.7-0.9：基本对齐，有1-2个情节点遗漏
-- 0.5-0.7：偏离较大，多个情节点未覆盖
-- <0.5：严重偏离，几乎与大纲无关
+评分标准（0-10分制）：
+- 9-10：完全对齐，且有超出大纲的精彩发挥
+- 7-8：基本对齐，有1-2个情节点遗漏
+- 5-6：偏离较大，多个情节点未覆盖
+- <5：严重偏离，几乎与大纲无关
 
 输出JSON：
-{
-  "alignment_score": 0.0-1.0,
-  "outline_coverage": {"covered": ["已覆盖的情节点"], "missed": ["遗漏的情节点"]},
+{{
+  "alignment_score": 0-10,
+  "outline_coverage": {{"covered": ["已覆盖的情节点"], "missed": ["遗漏的情节点"]}},
   "emotional_match": true/false,
   "unexpected_additions": ["新添加的内容（标注好创意或幻觉）"],
   "next_chapter_setup": "有铺垫/无铺垫",
-  "passed": true/false（0.7以上通过）
-}"""
+  "passed": true/false（7以上通过）
+}}"""
     )
 
 
@@ -600,6 +670,7 @@ CONSISTENCY_CHECK_L3 = consistency_check_l3()
 ORIGINALITY_CHECK_PROMPT = originality_check_prompt()
 ALIGNMENT_CHECK_PROMPT = alignment_check_prompt()
 EMOTIONAL_CURVE_PROMPT = emotional_curve_prompt()
+MULTI_DIM_ASSESSMENT_PROMPT = multi_dimension_assessment()
 
 
 EMOTIONAL_BEAT_TEMPLATES = {

@@ -1,28 +1,31 @@
-# Backend Dockerfile
-FROM python:3.11-slim
+# Backend Dockerfile — 多阶段构建 + 非 root 用户
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+FROM python:3.11-slim AS runtime
+
+RUN groupadd -r novelist && useradd -r -g novelist novelist
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /root/.local /home/novelist/.local
+ENV PATH=/home/novelist/.local/bin:$PATH
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy backend source code
 COPY backend/ ./backend/
+COPY .env.example ./
 
-# Copy .env.example for reference
-COPY .env.example .env.example
+RUN mkdir -p /app/data /app/logs && chown -R novelist:novelist /app
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
+USER novelist
 
-# Expose port
 EXPOSE 8000
 
-# Run the application
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
+
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

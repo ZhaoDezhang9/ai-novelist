@@ -29,17 +29,18 @@ class AlignmentChecker:
         overall = quick_score * 0.4 + llm_score * 0.6
         issues = quick_issues + llm_issues
 
+        # 0-10 评分，7分通过
         return CheckResult(
-            passed=overall >= self.settings.alignment_score_min,
+            passed=overall >= 7,
             layer="alignment",
             issues=issues,
             scores={"alignment_score": overall, "quick_check": quick_score, "deep_check": llm_score},
         )
 
     def _quick_check(self, content: str, outline: dict) -> tuple[float, list[dict]]:
-        """规则引擎快速对齐检查"""
+        """规则引擎快速对齐检查 - 返回0-10分"""
         issues = []
-        score = 1.0
+        score = 10.0
         content_lower = content.lower()
 
         plot_points = outline.get("plot_points", [])
@@ -53,7 +54,7 @@ class AlignmentChecker:
         if plot_points:
             hit_rate = hit_count / len(plot_points)
             if hit_rate < 0.3:
-                score -= 0.2
+                score -= 2
                 issues.append({
                     "type": "plot_coverage_low",
                     "severity": "high",
@@ -64,7 +65,7 @@ class AlignmentChecker:
         if key_chars:
             appeared = sum(1 for c in key_chars if c in content)
             if appeared < 1:
-                score -= 0.15
+                score -= 1.5
                 issues.append({
                     "type": "characters_missing",
                     "severity": "medium",
@@ -74,7 +75,7 @@ class AlignmentChecker:
         return max(0, score), issues
 
     async def _deep_check(self, content: str, outline: dict) -> tuple[float, list[dict]]:
-        """LLM深度对齐检查"""
+        """LLM深度对齐检查 - 返回0-10分"""
         goals = json.dumps(outline, ensure_ascii=False)
         system = ALIGNMENT_CHECK_PROMPT.format(outline_goals=goals)
         user = f"请检查以下章节是否与大纲对齐：\n\n{content[:5000]}"
@@ -82,9 +83,9 @@ class AlignmentChecker:
         try:
             raw = await fast_llm.chat(system, user, temperature=0.2, max_tokens=1200)
             data = json.loads(extract_json(raw))
-            return data.get("alignment_score", 0.7), data.get("issues", [])
+            return data.get("alignment_score", 7), data.get("issues", [])
         except Exception:
-            return 0.7, []
+            return 7, []
 
     async def full_review(self, story: Story):
         """每10章全量对齐审核"""
@@ -101,7 +102,7 @@ class AlignmentChecker:
                 content = ch_data.get("content", "")
                 if content:
                     score, _ = self._quick_check(content, outline_node)
-                    if score < self.settings.alignment_score_min:
+                    if score < 7:
                         drift_chapters.append({"chapter": ch_num, "score": score})
 
         if len(drift_chapters) > len(all_chapters) * 0.3:

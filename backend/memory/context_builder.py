@@ -1,14 +1,29 @@
-"""上下文构建器 - 组装最终写入LLM的提示词"""
+"""上下文构建器 - 组装最终写入LLM的提示词，集成语义搜索"""
 import logging
+import tiktoken
 from backend.core.models import Story, HotMemory, WarmMemory, ColdMemory
 from backend.core.config import get_settings
+from backend.memory.vector_store import get_vector_store
 
 
 logger = logging.getLogger(__name__)
 
+# tiktoken编码器（懒加载）
+_encoding = None
+
+
+def _get_encoding():
+    global _encoding
+    if _encoding is None:
+        try:
+            _encoding = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            _encoding = tiktoken.get_encoding("o200k_base")
+    return _encoding
+
 
 class ContextBuilder:
-    """将三级记忆组装为LLM可用的主提示词"""
+    """将三级记忆组装为LLM可用的主提示词，语义搜索增强上下文检索"""
 
     def build_master_prompt(
         self,
@@ -16,8 +31,9 @@ class ContextBuilder:
         hot_memory: HotMemory,
         warm_memory: WarmMemory,
         cold_memory: ColdMemory,
+        semantic_context: dict | None = None,
     ) -> str:
-        """构建完整的写作上下文"""
+        """构建完整的写作上下文（含语义搜索增强）"""
         cfg = story.config
         parts = []
 
@@ -52,6 +68,15 @@ class ContextBuilder:
                     rules_text += f"  - {event}（第{ch}章）\n"
             parts.append(rules_text)
 
+        # === 语义搜索：相关世界规则 ===
+        if semantic_context and semantic_context.get("relevant_rules"):
+            rules = [r for r in semantic_context["relevant_rules"] if r.get("score", 0) > 0.7]
+            if rules:
+                sr_text = "【语义关联世界规则】\n"
+                for r in rules[:3]:
+                    sr_text += f"  • {r['rule']}\n"
+                parts.append(sr_text)
+
         # === 角色卡（冷记忆） ===
         if cold_memory.character_cards:
             char_text = "【角色设定】\n"
@@ -84,6 +109,15 @@ class ContextBuilder:
                 f"转折提示：{outline.get('twist_note', '')}\n"
             )
 
+        # === 语义搜索：相关历史章节 ===
+        if semantic_context and semantic_context.get("relevant_chapters"):
+            rel_chs = [c for c in semantic_context["relevant_chapters"] if c.get("score", 0) > 0.6]
+            if rel_chs:
+                rel_text = "【语义相关历史章节】\n"
+                for c in rel_chs[:3]:
+                    rel_text += f"  第{c.get('chapter', '?')}章（相关度{c.get('score', 0):.2f}）：{c.get('summary', '')}\n"
+                parts.append(rel_text)
+
         # === 前文回顾（热记忆 + 温记忆） ===
         recent = hot_memory.recent_chapters
         summaries = warm_memory.recent_summaries
@@ -91,7 +125,7 @@ class ContextBuilder:
             recap = "【前文回顾】\n"
             if recent:
                 for ch in recent:
-                    recap += f"第{ch.get('number', '?')}章（全文见附件）：{ch.get('summary', '')}\n"
+                    recap += f"第{ch.get('number', '?')}章：{ch.get('summary', '')}\n"
             if summaries:
                 for s in summaries:
                     recap += f"第{s.get('chapter', '?')}章：{s.get('summary', '')}\n"
@@ -110,11 +144,20 @@ class ContextBuilder:
         if active_fs:
             fs_text = "【待回收伏笔 - 必须在合适时机回收】\n"
             for fs in active_fs:
-                fs_text += f"  🔗 伏笔（第{fs.get('planted_chapter', '?')}章）：{fs.get('description', '')}"
+                fs_text += f"伏笔（第{fs.get('planted_chapter', '?')}章）：{fs.get('description', '')}"
                 if fs.get("min_payoff_chapter"):
                     fs_text += f" [最早第{fs['min_payoff_chapter']}章回收]"
                 fs_text += "\n"
             parts.append(fs_text)
+
+        # === 语义搜索：相关伏笔 ===
+        if semantic_context and semantic_context.get("relevant_foreshadowing"):
+            rel_fs = [f for f in semantic_context["relevant_foreshadowing"] if f.get("score", 0) > 0.6]
+            if rel_fs:
+                sfs_text = "【语义关联伏笔 - 可能需要回收】\n"
+                for f in rel_fs[:3]:
+                    sfs_text += f"  第{f.get('planted_chapter', '?')}章：{f.get('description', '')}\n"
+                parts.append(sfs_text)
 
         # === 风格约束（冷记忆） ===
         sv = cold_memory.style_config
@@ -155,74 +198,94 @@ class ContextBuilder:
             "• 禁止情感线进展过快（不符合角色性格）\n"
         )
 
-        # 应用上下文截断
         settings = get_settings()
         parts = self._truncate_context(parts, settings.max_context_tokens)
 
         return "\n\n".join(parts)
 
+    async def build_semantic_context(self, story: Story, chapter_number: int) -> dict | None:
+        """构建语义搜索上下文"""
+        try:
+            outline = story.outline[chapter_number - 1] if 0 <= chapter_number - 1 < len(story.outline) else {}
+            query = f"{outline.get('goal', '')} {' '.join(outline.get('plot_points', []))} {' '.join(outline.get('key_characters', []))}"
+            if not query.strip():
+                query = f"第{chapter_number}章 {story.config.title}"
+            vs = get_vector_store()
+            return vs.search_relevant_context(story.id, query)
+        except Exception as e:
+            logger.warning(f"语义搜索失败: {e}")
+            return None
+
     def _estimate_tokens(self, text: str) -> int:
-        """简单估算文本的token数量（中文为主）"""
-        # 中文文本：1 token ≈ 2个中文字符
-        # 混合文本：简单估算，实际使用tiktoken会更准确
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-        other_chars = len(text) - chinese_chars
-        # 中文按1:2，其他按1:4（更接近英文token比例）
-        return (chinese_chars // 2) + (other_chars // 4)
+        """使用 tiktoken 精确计算 token 数（替换启发式估算）"""
+        try:
+            enc = _get_encoding()
+            return len(enc.encode(text))
+        except Exception:
+            # 回退到启发式估算
+            chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+            other_chars = len(text) - chinese_chars
+            return (chinese_chars // 2) + (other_chars // 4)
+
+    def count_tokens(self, text: str) -> int:
+        """公开的 token 计数方法（供其他模块使用）"""
+        return self._estimate_tokens(text)
+
+    def get_token_budget(self, chapter_content: str = "") -> dict:
+        """返回当前章节的 token 预算使用情况"""
+        settings = get_settings()
+        used = self._estimate_tokens(chapter_content) if chapter_content else 0
+        return {
+            "max_context_tokens": settings.max_context_tokens,
+            "used": used,
+            "remaining": max(0, settings.max_context_tokens - used),
+            "usage_pct": round(used / max(1, settings.max_context_tokens) * 100, 1),
+        }
 
     def _truncate_context(self, parts: list[str], max_tokens: int) -> list[str]:
-        """如果总token数超过限制，逐步截断内容"""
         total_tokens = sum(self._estimate_tokens(part) for part in parts)
         if total_tokens <= max_tokens:
             return parts
-        
+
         logger.warning(f"上下文过长，开始截断: {total_tokens} > {max_tokens} tokens")
-        
-        # 按照优先级截断：温记忆（摘要） > 热记忆（详细内容）
-        # 1. 先尝试截断温记忆的章节摘要
+
         for i, part in enumerate(parts):
             if "【前文回顾】" in part and "（全文见附件）" in part:
-                # 这是热记忆的详细内容，先保留
                 continue
             elif "【前文回顾】" in part:
-                # 这是温记忆的摘要，可以截断
                 lines = part.split('\n')
-                if len(lines) > 3:  # 保留最近3章的摘要
+                if len(lines) > 3:
                     parts[i] = '\n'.join(lines[:3]) + "\n...（已截断较早章节）"
                     total_tokens = sum(self._estimate_tokens(p) for p in parts)
                     if total_tokens <= max_tokens:
                         return parts
-        
-        # 2. 如果还不够，截断热记忆的详细内容
+
         for i, part in enumerate(parts):
-            if "【前文回顾】" in part and "（全文见附件）" in part:
+            if "【前文回顾】" in part:
                 lines = part.split('\n')
-                # 只保留最近1章的详细内容
                 kept_lines = []
                 chapter_count = 0
                 for line in lines:
-                    if line.startswith("第") and "章（全文见附件）" in line:
+                    if line.startswith("第") and "章" in line:
                         chapter_count += 1
-                        if chapter_count > 1:  # 只保留最近1章
+                        if chapter_count > 1:
                             continue
                     kept_lines.append(line)
                 if len(kept_lines) < len(lines):
-                    parts[i] = '\n'.join(kept_lines) + "\n...（已截断较早章节的详细内容）"
+                    parts[i] = '\n'.join(kept_lines) + "\n...（已截断较早章节）"
                     total_tokens = sum(self._estimate_tokens(p) for p in parts)
                     if total_tokens <= max_tokens:
                         return parts
-        
-        # 3. 如果还不够，截断角色状态部分
+
         for i, part in enumerate(parts):
             if "【角色当前状态】" in part:
                 lines = part.split('\n')
-                if len(lines) > 10:  # 保留前10行角色状态
+                if len(lines) > 10:
                     parts[i] = '\n'.join(lines[:10]) + "\n...（已截断部分角色状态）"
                     total_tokens = sum(self._estimate_tokens(p) for p in parts)
                     if total_tokens <= max_tokens:
                         return parts
-        
-        # 4. 最后的手段：截断所有部分
+
         logger.warning("上下文仍然过长，进行强制截断")
         truncated_parts = []
         remaining_tokens = max_tokens
@@ -232,15 +295,13 @@ class ContextBuilder:
                 truncated_parts.append(part)
                 remaining_tokens -= part_tokens
             else:
-                # 按比例截断这个部分
                 chars_to_keep = int(len(part) * remaining_tokens / part_tokens)
                 truncated_parts.append(part[:chars_to_keep] + "...（已截断）")
                 break
-        
+
         return truncated_parts
 
     def _get_pov_guide(self, pov) -> str:
-        """根据视角返回具体的写作指导"""
         guides = {
             "第一人称": (
                 "【视角规则 - 第一人称】\n"
@@ -271,7 +332,6 @@ class ContextBuilder:
         return guides.get(str(pov), "")
 
     def build_user_prompt(self, story: Story, chapter_number: int, outline_node: dict) -> str:
-        """构建用户提示（发送给LLM的具体指令）"""
         cfg = story.config
         return (
             f"请开始写第{chapter_number}章。\n\n"
@@ -284,7 +344,6 @@ class ContextBuilder:
         )
 
     def get_continuation_context(self, story: Story, chapter_number: int) -> str:
-        """续写/改写用的轻量上下文"""
         cfg = story.config
         return (
             f"【续写上下文 - 第{chapter_number}章】\n"

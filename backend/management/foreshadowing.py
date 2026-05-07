@@ -11,7 +11,7 @@ class ForeshadowingManager:
         self._check_interval = 3
 
     async def update_after_chapter(self, story: Story, chapter: ChapterRecord):
-        """章节入库后更新伏笔状态"""
+        """章节入库后更新伏笔状态（传统方式，两次调用）"""
         ch_num = chapter.chapter_number
         changes = []
 
@@ -35,6 +35,64 @@ class ForeshadowingManager:
                 for item in story.foreshadowing_list:
                     if isinstance(item, dict) and item.get("id") in overdue:
                         item["status_alert"] = "overdue"
+
+    async def update_after_chapter_combined(self, story: Story, chapter: ChapterRecord):
+        """合并新伏笔检测+已回收伏笔检测为一次LLM调用"""
+        ch_num = chapter.chapter_number
+        content = chapter.content[:3000]
+        if not content.strip():
+            return
+
+        chars = [c.get("name", "") for c in story.characters if c.get("name")]
+        chars_str = "、".join(chars[:5]) if chars else "主角"
+
+        active = [
+            item for item in story.foreshadowing_list
+            if isinstance(item, dict) and item.get("status") == "unresolved"
+        ]
+        active_desc = "\n".join([
+            f"ID:{item.get('id','?')} | 第{item.get('planted_chapter','?')}章 | {item.get('description','')}"
+            for item in active
+        ]) if active else "无活跃伏笔"
+
+        prompt = (
+            f"请同时完成两项伏笔检测任务：\n\n"
+            f"任务1：检测本章新埋的伏笔（悬念、未解之谜、暗示）\n"
+            f"任务2：判断以下未回收伏笔是否在本章被回收\n\n"
+            f"当前角色：{chars_str}\n\n"
+            f"【未回收伏笔】\n{active_desc}\n\n"
+            f"【本章内容】\n{content}\n\n"
+            f'输出JSON格式：{{"new_foreshadowing": [{{"description": "伏笔描述", "min_payoff_chapter": 最早回收章或无0}}], "resolved_ids": ["被回收的伏笔ID"]}}\n'
+            f"注意：没有则输出空数组 []"
+        )
+
+        try:
+            raw = await fast_llm.chat(
+                "你是伏笔分析师，检测新伏笔和已回收伏笔。只输出JSON。",
+                prompt, temperature=0.3, max_tokens=800,
+            )
+            data = json.loads(extract_json(raw))
+
+            new_items = data.get("new_foreshadowing", []) if isinstance(data, dict) else []
+            for item in new_items:
+                fs = ForeshadowingItem(
+                    planted_chapter=ch_num,
+                    description=item.get("description", "未知伏笔"),
+                    min_payoff_chapter=item.get("min_payoff_chapter") or None,
+                    status="unresolved",
+                )
+                story.foreshadowing_list.append(fs.model_dump())
+                chapter.foreshadowing_planted.append(fs.id)
+
+            resolved_ids = data.get("resolved_ids", []) if isinstance(data, dict) else []
+            for fs_id in resolved_ids:
+                for item in story.foreshadowing_list:
+                    if isinstance(item, dict) and item.get("id") == fs_id:
+                        item["status"] = "resolved"
+                        item["payoff_chapter"] = ch_num
+                        chapter.foreshadowing_resolved.append(fs_id)
+        except Exception:
+            return
 
     async def _detect_new_foreshadowing(self, story: Story, chapter: ChapterRecord) -> list[ForeshadowingItem]:
         """检测本章新埋的伏笔"""

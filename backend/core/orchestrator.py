@@ -1,63 +1,62 @@
-"""主编排器 - 全流程闭环大脑
+"""主编排器 - 全流程闭环大脑（Agent + DI + 任务队列）
 
-流水线：创建大纲 → 逐章写 → 三层防御质控 → 记忆上下文 → 伏笔管理 → 增量改写 → 入库
+流水线：创建大纲 → 逐章写 → 多维度质控 → 记忆上下文 → 伏笔管理 → 增量改写 → 入库
+优化后每章LLM调用：1次写作 + 1次评估 + 0-3次改写 + 2次后处理 = ≤7次
 """
-import asyncio
 from typing import AsyncGenerator, Optional
 
 from backend.core.models import (
-    Story, StoryConfig, ChapterRecord, ChapterStatus,
-    CheckResult, HotMemory, WarmMemory, ColdMemory, ForeshadowingItem,
+    Story, StoryConfig, ChapterRecord, ChapterStatus, CheckResult,
 )
-from backend.core.llm_client import main_llm, fast_llm
 from backend.core.config import get_settings
-from backend.memory import story_db
+from backend.agents.protocols import (
+    WorldbuilderAgent, PlotAgent, CharacterAgent,
+    ChapterWriterAgent, CriticAgent, StyleAgent,
+)
 from backend.memory.tiered_memory import TieredMemory
-from backend.memory.context_builder import ContextBuilder
-from backend.generation.outline_engine import OutlineEngine
-from backend.generation.chapter_writer import ChapterWriter
-from backend.pipeline.parallel_pipe import ParallelPipeline
-from backend.quality.consistency import ConsistencyChecker
-from backend.quality.originality import OriginalityChecker
-from backend.quality.alignment import AlignmentChecker
-from backend.quality.emotional_curve import EmotionalCurveAnalyzer
+from backend.memory.vector_store import get_vector_store
 from backend.management.foreshadowing import ForeshadowingManager
-from backend.management.style_quant import StyleQuantifier
 from backend.management.rewrite_engine import RewriteEngine
+from backend.core.task_queue import TaskQueue, ChapterTask
+from backend.core.container import get_container, Container
+from backend.memory import story_db
 from backend.generation_status import generation_tracker
 
 
 class NovelOrchestrator:
-    """小说创作总编排器"""
+    """小说创作总编排器（依赖注入）"""
 
-    def __init__(self):
+    def __init__(self, container: Optional[Container] = None):
+        c = container or get_container()
         self.settings = get_settings()
+        self.worldbuilder: WorldbuilderAgent = c.get(WorldbuilderAgent)
+        self.plotter: PlotAgent = c.get(PlotAgent)
+        self.char_agent: CharacterAgent = c.get(CharacterAgent)
+        self.writer: ChapterWriterAgent = c.get(ChapterWriterAgent)
+        self.critic: CriticAgent = c.get(CriticAgent)
+        self.style: StyleAgent = c.get(StyleAgent)
         self.memory = TieredMemory()
-        self.context_builder = ContextBuilder()
-        self.outline_engine = OutlineEngine()
-        self.chapter_writer = ChapterWriter()
-        self.pipeline = ParallelPipeline()
-        self.consistency = ConsistencyChecker()
-        self.originality = OriginalityChecker()
-        self.alignment = AlignmentChecker()
-        self.emotion = EmotionalCurveAnalyzer()
-        self.foreshadowing = ForeshadowingManager()
-        self.style_quant = StyleQuantifier()
-        self.rewrite = RewriteEngine()
+        self.foreshadowing: ForeshadowingManager = c.get(ForeshadowingManager)
+        self.rewrite: RewriteEngine = c.get(RewriteEngine)
+        self.task_queue: TaskQueue = c.get(TaskQueue)
+        self.task_queue.set_handler(self._handle_chapter_task)
 
     # ========== 初始化流程 ==========
 
     async def create_story(self, config: StoryConfig) -> Story:
-        """创建新故事：生成大纲、世界观、角色设定"""
         story = Story(config=config)
 
-        story.outline = await self.outline_engine.generate(story)
-        story.world_bible = await self.outline_engine.generate_world_bible(story)
-        story.characters = await self.outline_engine.generate_characters(story)
+        story.outline = await self.plotter.generate_plot(story)
+        story.world_bible = await self.worldbuilder.build_world(story)
+        story.characters = await self.char_agent.generate_characters(story)
 
         await story_db.save_story(story.id, story.model_dump())
         await story_db.save_outline(story.id, story.outline)
         await story_db.save_world_bible(story.id, story.world_bible.model_dump())
+
+        vs = get_vector_store()
+        if story.world_bible.rules:
+            vs.index_world_rules(story.id, story.world_bible.rules)
 
         return story
 
@@ -74,61 +73,58 @@ class NovelOrchestrator:
             story.world_bible = WorldBible(**wb)
         return story
 
-    # ========== 逐章写作主循环 ==========
+    # ========== 共享上下文准备 ==========
+
+    async def _prepare_context(self, story: Story, chapter_num: int) -> tuple:
+        self.memory.set_story(story)
+        await self.memory.restore_caches()
+        hot = await self.memory.get_hot(chapter_num)
+        warm = self.memory.get_warm()
+        cold = self.memory.get_cold()
+        semantic_ctx = await self.writer.build_semantic_context(story, chapter_num)
+        context = self.writer.build_context(story, hot, warm, cold, semantic_ctx)
+        return hot, context
 
     async def write_next_chapter(self, story: Story) -> ChapterRecord:
-        """写下一章：完整流水线"""
-        self.memory.set_story(story)
+        ch_num = story.current_chapter + 1
+        hot, context = await self._prepare_context(story, ch_num)
 
-        context = self.context_builder.build_master_prompt(
-            story=story,
-            hot_memory=await self.memory.get_hot(story.current_chapter + 1),
-            warm_memory=self.memory.get_warm(),
-            cold_memory=self.memory.get_cold(),
-        )
+        chapter = await self.writer.write_draft(story, ch_num, context)
 
-        chapter = await self.chapter_writer.write_draft(
-            story=story,
-            chapter_number=story.current_chapter + 1,
-            context=context,
-        )
-
-        checks = await self.pipeline.run_checks_parallel(
-            story=story,
-            chapter=chapter,
-            hot_memory=await self.memory.get_hot(story.current_chapter + 1),
-        )
-        chapter.check_results = checks
+        multi_check = await self.critic.review(story, chapter, hot)
+        chapter.check_results = [multi_check]
 
         round_num = 0
-        while not self._all_passed(checks) and round_num < self.settings.max_rewrite_rounds:
+        while not multi_check.passed and round_num < self.settings.max_rewrite_rounds:
             round_num += 1
-            issues = self._collect_issues(checks)
+            issues = multi_check.issues
+            for i in issues:
+                i["layer"] = multi_check.layer
             chapter = await self.rewrite.rewrite_targeted(chapter, issues, context)
-
-            # 只重跑失败的检查项，提高效率
-            failed_layers = {c.layer for c in checks if not c.passed}
-            new_checks = await self.pipeline.run_checks_parallel(
-                story=story, chapter=chapter,
-                hot_memory=await self.memory.get_hot(story.current_chapter + 1),
-                only_layers=failed_layers,
-            )
-            # 合并结果：用新检查结果替换对应层的旧结果
-            new_by_layer = {c.layer: c for c in new_checks}
-            checks = [new_by_layer.get(c.layer, c) for c in checks]
-            chapter.check_results = checks
+            multi_check = await self.critic.review(story, chapter, hot)
+            chapter.check_results = [multi_check]
             chapter.rewrites_count = round_num
 
         chapter.status = ChapterStatus.ACCEPTED
         await story_db.save_chapter(story.id, chapter.chapter_number, chapter.model_dump())
 
-        await self.memory.update_after_chapter(chapter)
+        await self._post_chapter_processing(story, chapter)
         story.current_chapter = chapter.chapter_number
-
-        await self.foreshadowing.update_after_chapter(story, chapter)
         await story_db.save_story(story.id, story.model_dump())
 
         return chapter
+
+    async def _post_chapter_processing(self, story: Story, chapter: ChapterRecord):
+        """合并后处理：摘要+角色状态(1次) + 伏笔检测(1次)"""
+        try:
+            await self.memory.update_after_chapter_combined(story, chapter)
+        except Exception:
+            await self.memory.update_after_chapter(chapter)
+
+        try:
+            await self.foreshadowing.update_after_chapter_combined(story, chapter)
+        except Exception:
+            await self.foreshadowing.update_after_chapter(story, chapter)
 
     async def write_all_chapters(self, story: Story) -> AsyncGenerator[ChapterRecord, None]:
         """写完全部章节（生成器，逐章返回）"""
@@ -137,33 +133,24 @@ class NovelOrchestrator:
             yield chapter
 
             if chapter.chapter_number % 10 == 0:
-                await self.alignment.full_review(story)
+                await self.critic.full_review(story)
 
     async def write_chapter_stream(self, story: Story) -> AsyncGenerator[dict, None]:
-        """流式写章节 - 供 SSE 推送，自动保存草稿"""
-        self.memory.set_story(story)
         chapter_num = story.current_chapter + 1
         generation_tracker.start(story.id, chapter_num)
-
-        context = self.context_builder.build_master_prompt(
-            story=story,
-            hot_memory=await self.memory.get_hot(chapter_num),
-            warm_memory=self.memory.get_warm(),
-            cold_memory=self.memory.get_cold(),
-        )
+        hot, context = await self._prepare_context(story, chapter_num)
 
         content_chunks = []
         chapter = None
-        auto_save_interval = 50  # 每50个token自动保存一次
+        auto_save_interval = 50
         token_count = 0
 
-        async for event in self.chapter_writer.write_draft_stream(story, chapter_num, context):
+        async for event in self.writer.write_draft_stream(story, chapter_num, context):
             if event.get("type") == "token":
                 content_chunks.append(event["data"])
                 token_count += 1
                 generation_tracker.update(story.id, tokens_received=token_count,
                                           content_preview="".join(content_chunks)[-200:])
-                # 自动保存草稿
                 if token_count % auto_save_interval == 0:
                     draft_content = "".join(content_chunks)
                     await story_db.save_chapter(story.id, chapter_num, {
@@ -185,49 +172,86 @@ class NovelOrchestrator:
             return
 
         generation_tracker.update(story.id, status="checking")
-        checks = await self.pipeline.run_checks_parallel(
-            story=story, chapter=chapter,
-            hot_memory=await self.memory.get_hot(chapter_num),
-        )
-        chapter.check_results = checks
-        yield {"type": "check_complete", "results": [{"layer": c.layer, "passed": c.passed} for c in checks]}
+        multi_check = await self.critic.review(story, chapter, hot)
+        chapter.check_results = [multi_check]
+        yield {"type": "check_complete", "results": [{"layer": multi_check.layer, "passed": multi_check.passed, "scores": multi_check.scores}]}
 
         round_num = 0
-        while not self._all_passed(checks) and round_num < self.settings.max_rewrite_rounds:
+        while not multi_check.passed and round_num < self.settings.max_rewrite_rounds:
             round_num += 1
-            issues = self._collect_issues(checks)
+            issues = multi_check.issues
+            for i in issues:
+                i["layer"] = multi_check.layer
             generation_tracker.update(story.id, status="rewriting")
             yield {"type": "rewriting", "round": round_num, "issues_count": len(issues)}
             chapter = await self.rewrite.rewrite_targeted(chapter, issues, context)
-
-            # 只重跑失败的检查项
-            failed_layers = {c.layer for c in checks if not c.passed}
-            new_checks = await self.pipeline.run_checks_parallel(
-                story=story, chapter=chapter,
-                hot_memory=await self.memory.get_hot(chapter_num),
-                only_layers=failed_layers,
-            )
-            # 合并结果：用新检查结果替换对应层的旧结果
-            new_by_layer = {c.layer: c for c in new_checks}
-            checks = [new_by_layer.get(c.layer, c) for c in checks]
-            chapter.check_results = checks
+            multi_check = await self.critic.review(story, chapter, hot)
+            chapter.check_results = [multi_check]
             chapter.rewrites_count = round_num
 
         generation_tracker.update(story.id, status="saving")
         chapter.status = ChapterStatus.ACCEPTED
         await story_db.save_chapter(story.id, chapter.chapter_number, chapter.model_dump())
-        await self.memory.update_after_chapter(chapter)
+        await self._post_chapter_processing(story, chapter)
         story.current_chapter = chapter.chapter_number
-        await self.foreshadowing.update_after_chapter(story, chapter)
         await story_db.save_story(story.id, story.model_dump())
 
         generation_tracker.finish(story.id)
         yield {"type": "chapter_complete", "chapter_number": chapter.chapter_number, "word_count": chapter.word_count}
 
+    # ========== 任务队列 ==========
+
+    async def submit_all_chapters(self, story: Story) -> list[str]:
+        """提交剩余章节到任务队列，返回任务 ID 列表"""
+        await self.task_queue.start()
+        task_ids = []
+        for ch_num in range(story.current_chapter + 1, story.config.target_chapters + 1):
+            task = ChapterTask(
+                task_id=f"{story.id}_ch{ch_num}",
+                story_id=story.id,
+                chapter_number=ch_num,
+            )
+            await self.task_queue.submit(task)
+            task_ids.append(task.task_id)
+        return task_ids
+
+    async def _handle_chapter_task(self, task: ChapterTask) -> ChapterRecord:
+        story = await self.load_story(task.story_id)
+        if not story:
+            raise ValueError(f"故事 {task.story_id} 不存在")
+        story.current_chapter = task.chapter_number - 1
+        return await self.write_next_chapter(story)
+
+    # ========== 改写入口 ==========
+
+    async def rewrite_chapter(self, story: Story, chapter_number: int) -> Optional[ChapterRecord]:
+        chapter_data = await story_db.load_chapter(story.id, chapter_number)
+        if not chapter_data:
+            return None
+
+        chapter = ChapterRecord(
+            story_id=story.id,
+            chapter_number=chapter_number,
+            content=chapter_data.get("content", ""),
+            word_count=chapter_data.get("word_count", 0),
+        )
+
+        hot, context = await self._prepare_context(story, chapter_number)
+        multi_check = await self.critic.review(story, chapter, hot)
+        issues = multi_check.issues
+        for i in issues:
+            i["layer"] = multi_check.layer
+
+        if issues:
+            chapter = await self.rewrite.rewrite_targeted(chapter, issues, context)
+            await story_db.save_chapter(story.id, chapter_number, chapter.model_dump())
+
+        return chapter
+
     # ========== 助手方法 ==========
 
     def _all_passed(self, checks: list[CheckResult]) -> bool:
-        return all(c.passed for c in checks if c.layer in ("L1", "L2", "L3"))
+        return all(c.passed for c in checks)
 
     def _collect_issues(self, checks: list[CheckResult]) -> list[dict]:
         issues = []
@@ -247,4 +271,6 @@ class NovelOrchestrator:
             "vocab_diversity": self.settings.vocab_diversity_threshold,
             "twist_density": self.settings.twist_density_min,
             "alignment_score": self.settings.alignment_score_min,
+            "dimension_min": self.settings.quality_dimension_min,
+            "overall_min": self.settings.quality_overall_min,
         }

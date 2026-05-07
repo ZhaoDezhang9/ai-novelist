@@ -3,8 +3,9 @@ import { Routes, Route, Link, useLocation } from "react-router-dom";
 import StoryList from "./pages/StoryList";
 import StoryCreate from "./pages/StoryCreate";
 import StoryDetail from "./pages/StoryDetail";
+import Reader from "./pages/Reader";
 import Settings from "./pages/Settings";
-import { GenerationProvider, useGeneration } from "./GenerationContext";
+import { useGenerationStore } from "./stores/generationStore";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 import { colors, layout, font, space, bp, scrollbar, shadows, radius, fonts } from "./styles";
@@ -31,7 +32,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function GlobalProgressBar() {
-  const { activeGenerations, hasAnyActive } = useGeneration();
+  const activeGenerations = useGenerationStore((s) => s.activeGenerations);
+  const hasAnyActive = useGenerationStore((s) => s.hasAnyActive());
   if (!hasAnyActive) return null;
 
   const active = Array.from(activeGenerations.values()).find(
@@ -66,9 +68,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <GenerationProvider>
-          <AppInner />
-        </GenerationProvider>
+        <AppInner />
       </ThemeProvider>
     </ErrorBoundary>
   );
@@ -261,6 +261,7 @@ function AppInner() {
             <Route path="/" element={<StoryList />} />
             <Route path="/create" element={<StoryCreate />} />
             <Route path="/story/:id" element={<StoryDetail />} />
+            <Route path="/story/:id/reader" element={<Reader />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>

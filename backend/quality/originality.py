@@ -34,13 +34,15 @@ class OriginalityChecker:
         scores["template_avoidance"] = template_score
         issues.extend(template_issues)
 
-        overall = sum(scores.values()) / max(1, len(scores))
-        passed = overall >= 0.6 and len(issues) < 5
+        # 将 0-1 分数映射到 0-10
+        overall_01 = sum(scores.values()) / max(1, len(scores))
+        overall = overall_01 * 10
+        passed = overall >= 7 and len(issues) < 5
         return CheckResult(
             passed=passed,
             layer="originality",
             issues=issues,
-            scores=scores,
+            scores={k: v * 10 for k, v in scores.items()},
         )
 
     def _check_sentence_repetition(self, content: str) -> tuple[float, list[dict]]:

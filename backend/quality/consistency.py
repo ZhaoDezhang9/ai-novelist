@@ -13,16 +13,17 @@ class ConsistencyChecker:
         pass
 
     async def check_l1_self(self, chapter: ChapterRecord) -> CheckResult:
-        """L1: 章节自身一致性（时间、空间、角色、道具）"""
+        """L1: 章节自身一致性（时间、空间、角色、道具）- 0-10评分"""
         user = f"请检查以下章节的自身一致性：\n\n{chapter.content[:6000]}"
         try:
             raw = await fast_llm.chat(CONSISTENCY_CHECK_L1, user, temperature=0.2, max_tokens=1000)
             data = json.loads(extract_json(raw))
+            score = data.get("score", 7)
             return CheckResult(
-                passed=data.get("passed", True),
+                passed=score >= 7,
                 layer="L1",
                 issues=data.get("issues", []),
-                scores={"self_consistency": 1.0 if data.get("passed") else 0.5},
+                scores={"self_consistency": score},
             )
         except Exception as e:
             return CheckResult(passed=False, layer="L1", issues=[{
@@ -46,11 +47,12 @@ class ConsistencyChecker:
         try:
             raw = await fast_llm.chat(system, user, temperature=0.2, max_tokens=1000)
             data = json.loads(extract_json(raw))
+            score = data.get("score", 7)
             return CheckResult(
-                passed=data.get("passed", True),
+                passed=score >= 7,
                 layer="L2",
                 issues=data.get("issues", []),
-                scores={"cross_consistency": 1.0 if data.get("passed") else 0.5},
+                scores={"cross_consistency": score},
             )
         except Exception as e:
             return CheckResult(passed=False, layer="L2", issues=[{
@@ -71,23 +73,17 @@ class ConsistencyChecker:
         try:
             raw = await fast_llm.chat(system, user, temperature=0.2, max_tokens=1000)
             data = json.loads(extract_json(raw))
+            score = data.get("score", 7)
             return CheckResult(
-                passed=data.get("passed", True),
+                passed=score >= 7,
                 layer="L3",
                 issues=data.get("violations", data.get("issues", [])),
-                scores={"world_compliance": 1.0 if data.get("passed") else 0.3},
+                scores={"world_compliance": score},
             )
         except Exception as e:
             return CheckResult(passed=False, layer="L3", issues=[{
                 "type": "check_error", "severity": "high",
                 "description": f"L3检查异常: {e}",
             }])
-
-    async def run_all(self, story: Story, chapter: ChapterRecord, hot_memory=None) -> list[CheckResult]:
-        """运行全部三层检查"""
-        l1 = await self.check_l1_self(chapter)
-        l2 = await self.check_l2_cross(story, chapter, hot_memory)
-        l3 = await self.check_l3_world_rules(story, chapter)
-        return [l1, l2, l3]
 
 

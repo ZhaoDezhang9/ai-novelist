@@ -27,6 +27,7 @@ frontend/.vite/
 # Data
 *.db
 data/
+logs/
 
 # OS
 .DS_Store

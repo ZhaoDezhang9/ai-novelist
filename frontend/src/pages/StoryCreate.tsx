@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { colors, space, font, btn, layout, genreColors } from "../styles";
 import { api, StoryConfig } from "../services/api";
+import TagGroup from "../components/TagGroup";
+import Stepper from "../components/Stepper";
 
 const GENRE_OPTIONS = ["仙侠", "玄幻", "都市", "言情", "悬疑", "科幻", "历史", "武侠", "游戏", "奇幻", "其他"];
-const STYLE_OPTIONS = ["古典雅致", "轻松幽默", "严肃文学", "爽文快节奏", "文青细腻", "悬疑紧绷", "热血战斗", "虐心催泪", "甜宠治愈"];
-const POV_OPTIONS = ["第三人称", "第三人称有限", "第三人称全知", "第一人称"];
+const STYLE_OPTIONS = ["轻松幽默", "严肃文学", "爽文快节奏", "文青细腻", "悬疑紧绷", "热血战斗", "虐心催泪", "甜宠治愈"];
+const POV_OPTIONS = ["第一人称", "第三人称有限", "第三人称全知"];
 
 const s = {
   layout: { display: "grid", gridTemplateColumns: "1fr 360px", gap: "36px", alignItems: "start" },
@@ -37,32 +39,6 @@ const s = {
   aiGenerateBtn: { width: "100%", padding: "12px 20px", background: colors.accent, color: "#fff", border: "none", borderRadius: "6px", fontSize: "14px", fontWeight: 600, cursor: "pointer", marginTop: "12px" },
   submitBtn: { width: "100%", padding: "14px 24px", background: colors.primary, color: "#fff", border: "none", borderRadius: "6px", fontSize: "15px", fontWeight: 600, cursor: "pointer", marginTop: "24px" },
 };
-const TagGroup: React.FC<{ label: string; options: string[]; value: string; onChange: (v: string) => void }> = 
-  ({ label: groupLabel, options, value, onChange }) => (
-  <div style={s.formGroup}>
-    <label style={s.formLabel}>{groupLabel}</label>
-    <div style={s.tagSelector}>
-      {options.map((opt) => (
-        <button key={opt} onClick={() => onChange(opt)} style={value === opt ? s.tagOptionSelected : s.tagOption}>
-          {opt}
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
-const Stepper: React.FC<{ label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }> = 
-  ({ label: stepperLabel, value, onChange, min = 1, max = 999, step = 1 }) => (
-  <div style={s.formGroup}>
-    <label style={s.formLabel}>{stepperLabel}</label>
-    <div style={s.stepper}>
-      <button style={s.stepperBtn} onClick={() => onChange(Math.max(min, value - step))}>−</button>
-      <span style={s.stepperValue}>{value.toLocaleString()}</span>
-      <button style={s.stepperBtn} onClick={() => onChange(Math.min(max, value + step))}>+</button>
-    </div>
-  </div>
-);
-
 const PreviewCard: React.FC<{ config: StoryConfig }> = ({ config }) => {
   const totalWords = config.target_chapters * config.words_per_chapter;
   const estimatedMinutes = Math.ceil(totalWords / 150);
