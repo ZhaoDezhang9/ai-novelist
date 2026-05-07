@@ -5,7 +5,7 @@ from typing import Optional
 
 from backend.core.models import (
     Story, ChapterRecord, HotMemory, WarmMemory, ColdMemory,
-    ForeshadowingItem, WorldBible, StyleVector,
+    WorldBible, StyleVector,
 )
 from backend.core.config import get_settings
 from backend.core.llm_client import fast_llm
@@ -203,6 +203,7 @@ class TieredMemory:
         """LLM缓存：先查缓存，未命中再调用LLM"""
         if not chapter.content.strip():
             return ""
+        assert self.story is not None
         content = chapter.content[:2000]
         cached = await story_db.load_llm_cache(self.story.id, "summarize_chapter", content)
         if cached:

@@ -1,6 +1,6 @@
 """增量改写引擎 - 精准定位问题段落，单次调用批量改写"""
 import re
-from backend.core.models import Story, ChapterRecord, CheckResult
+from backend.core.models import ChapterRecord
 from backend.core.llm_client import fast_llm
 from backend.core.config import get_settings
 

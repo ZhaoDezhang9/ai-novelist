@@ -41,8 +41,6 @@ class AlignmentChecker:
         """规则引擎快速对齐检查 - 返回0-10分"""
         issues = []
         score = 10.0
-        content_lower = content.lower()
-
         plot_points = outline.get("plot_points", [])
         hit_count = 0
         for point in plot_points:
@@ -113,6 +111,6 @@ class AlignmentChecker:
                     f"以下章节与大纲偏离较大：\n{summary}\n\n请分析共性问题并给出修正建议。",
                     temperature=0.3, max_tokens=1000,
                 )
-                story._alignment_review = raw
+                story._alignment_review = raw  # type: ignore[attr-defined]
             except Exception:
                 pass

@@ -112,7 +112,7 @@ async def write_next_chapter(story_id: str):
 
 
 @router.post("/{story_id}/write-all")
-async def write_all_chapters(story_id: str, start_from: int = None):
+async def write_all_chapters(story_id: str, start_from: int | None = None):
     """写完全部章节（同步返回）"""
     orchestrator = NovelOrchestrator()
     story = await orchestrator.load_story(story_id)

@@ -124,11 +124,11 @@ class ContextBuilder:
         if recent or summaries:
             recap = "【前文回顾】\n"
             if recent:
-                for ch in recent:
-                    recap += f"第{ch.get('number', '?')}章：{ch.get('summary', '')}\n"
+                for ch in recent:  # type: ignore[assignment]
+                    recap += f"第{ch.get('number', '?')}章：{ch.get('summary', '')}\n"  # type: ignore[attr-defined]
             if summaries:
-                for s in summaries:
-                    recap += f"第{s.get('chapter', '?')}章：{s.get('summary', '')}\n"
+                for s in summaries:  # type: ignore[assignment]
+                    recap += f"第{s.get('chapter', '?')}章：{s.get('summary', '')}\n"  # type: ignore[attr-defined]
             parts.append(recap)
 
         # === 角色当前状态（温记忆） ===

@@ -1,10 +1,9 @@
 """章节写作引擎 - 流式写章节 + 字数控制"""
-import asyncio
 import logging
 from typing import AsyncGenerator, Optional
 from datetime import datetime
 
-from backend.core.models import Story, ChapterRecord, ChapterStatus
+from backend.core.models import ChapterRecord, ChapterStatus
 from backend.core.llm_client import main_llm
 from backend.generation.prompt_templates import chapter_writing_user
 

@@ -1,5 +1,4 @@
 """生成状态追踪 — 记录哪些故事正在生成中"""
-import asyncio
 from typing import Optional
 from dataclasses import dataclass, field
 from datetime import datetime

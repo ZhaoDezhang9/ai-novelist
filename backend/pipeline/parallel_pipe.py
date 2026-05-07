@@ -2,7 +2,7 @@
 import asyncio
 import json
 from typing import Optional
-from backend.core.models import Story, ChapterRecord, CheckResult, QualityScores
+from backend.core.models import ChapterRecord, CheckResult, QualityScores
 from backend.core.llm_client import fast_llm
 from backend.core.utils import extract_json
 from backend.generation.prompt_templates import MULTI_DIM_ASSESSMENT_PROMPT
@@ -25,7 +25,7 @@ class ParallelPipeline:
         context_parts = []
         wb = story.world_bible
         if wb and wb.rules:
-            context_parts.append(f"【世界观规则】\n" + "\n".join(f"- {r}" for r in wb.rules))
+            context_parts.append("【世界观规则】\n" + "\n".join(f"- {r}" for r in wb.rules))
 
         if story.outline and chapter_num - 1 < len(story.outline):
             outline_node = story.outline[chapter_num - 1]
@@ -42,7 +42,7 @@ class ParallelPipeline:
 
         if story.characters:
             chars = [f"{c.get('name', '')}: {c.get('traits', '')}" for c in story.characters[:5]]
-            context_parts.append(f"【角色设定】\n" + "\n".join(chars))
+            context_parts.append("【角色设定】\n" + "\n".join(chars))
 
         context = "\n\n".join(context_parts) if context_parts else "无额外上下文"
         system = MULTI_DIM_ASSESSMENT_PROMPT.format(context=context)
@@ -132,6 +132,6 @@ class ParallelPipeline:
                     issues=[{"type": "check_error", "severity": "critical", "description": f"质检模块异常: {str(r)}"}],
                 ))
             else:
-                results.append(r)
+                results.append(r)  # type: ignore[arg-type]
 
         return results

@@ -1,6 +1,5 @@
 """伏笔管理器 - 埋设/追踪/回收/逾期提醒"""
 import json
-from datetime import datetime
 from backend.core.models import Story, ChapterRecord, ForeshadowingItem
 from backend.core.llm_client import fast_llm
 from backend.core.utils import extract_json

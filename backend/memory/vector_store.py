@@ -75,7 +75,7 @@ class VectorStore:
             ids.append(f"{story_id}_rule{i}")
             docs.append(rule)
             metas.append({"story_id": story_id, "rule_index": i})
-        coll.upsert(documents=docs, metadatas=metas, ids=ids)
+        coll.upsert(documents=docs, metadatas=metas, ids=ids)  # type: ignore[arg-type]
 
     def index_foreshadowing(self, story_id: str, items: list[dict]):
         if not items:
@@ -96,7 +96,7 @@ class VectorStore:
                 "status": item.get("status", "unresolved"),
             })
         if ids:
-            coll.upsert(documents=docs, metadatas=metas, ids=ids)
+            coll.upsert(documents=docs, metadatas=metas, ids=ids)  # type: ignore[arg-type]
 
     # --- Search ---
 
@@ -108,15 +108,15 @@ class VectorStore:
         for name in collections:
             coll = self._get_collection(name)
             try:
-                r = coll.query(query_texts=[query], n_results=n_results, where=where)
+                r = coll.query(query_texts=[query], n_results=n_results, where=where)  # type: ignore[arg-type]
                 items = []
                 if r["ids"] and r["ids"][0]:
                     for i, doc_id in enumerate(r["ids"][0]):
                         item = {"id": doc_id, "document": r["documents"][0][i] if r["documents"] else ""}
                         if r["metadatas"] and r["metadatas"][0]:
-                            item["metadata"] = r["metadatas"][0][i] or {}
+                            item["metadata"] = r["metadatas"][0][i] or {}  # type: ignore[assignment]
                         if r["distances"] and r["distances"][0]:
-                            item["distance"] = r["distances"][0][i]
+                            item["distance"] = r["distances"][0][i]  # type: ignore[assignment]
                         items.append(item)
                 results[name] = items
             except Exception as e:
@@ -134,7 +134,7 @@ class VectorStore:
     def search_relevant_context(self, story_id: str, query: str, n_results: int = 5) -> dict:
         """搜索与当前章相关的所有上下文"""
         results = self.search_all(story_id, query, n_results)
-        context = {
+        context: dict[str, list] = {
             "relevant_chapters": [],
             "relevant_characters": [],
             "relevant_rules": [],

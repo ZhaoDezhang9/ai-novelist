@@ -7,9 +7,8 @@
 4. 章节写作增加节奏控制和结构约束
 5. 角色增加weakness/voice字段防止千篇一律
 """
-import os
 from pathlib import Path
-from backend.core.models import Story, StoryGenre, StoryStyle, NarrativePOV
+from backend.core.models import Story
 
 
 def _load_prompt(prompt_name: str, default: str = "") -> str:

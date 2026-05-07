@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from pathlib import Path
 
-from backend.core.config import get_settings, Settings
+from backend.core.config import get_settings
 
 router = APIRouter()
 

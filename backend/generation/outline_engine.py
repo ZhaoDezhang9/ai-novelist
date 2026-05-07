@@ -2,13 +2,12 @@
 import json
 import re
 import logging
-from backend.core.models import Story, WorldBible, StyleVector
-from backend.core.llm_client import main_llm, planning_llm
+from backend.core.models import Story, WorldBible
+from backend.core.llm_client import planning_llm
 from backend.core.utils import extract_json
 from backend.generation.prompt_templates import (
     outline_system_prompt, outline_user_prompt,
     world_bible_system_prompt, character_system_prompt,
-    STYLE_VECTORS,
 )
 
 

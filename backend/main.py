@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -16,6 +15,9 @@ from backend.core.config import get_settings
 from backend.core.auth import verify_api_key
 from backend.core.logging import setup_logging, get_logger, correlation_id_var
 from backend.memory.story_db import init_db
+from backend.api.stories import router as stories_router
+from backend.api.chapters import router as chapters_router
+from backend.api.settings import router as settings_router
 
 setup_logging()
 log = get_logger(component="main")
@@ -41,7 +43,7 @@ app = FastAPI(
 # Rate limiting
 limiter = Limiter(key_func=get_remote_address, default_limits=[get_settings().rate_limit])
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # CORS from env
 settings = get_settings()
@@ -67,10 +69,6 @@ async def add_correlation_id(request: Request, call_next):
 
 
 # API 路由 (with auth)
-from backend.api.stories import router as stories_router
-from backend.api.chapters import router as chapters_router
-from backend.api.settings import router as settings_router
-
 app.include_router(stories_router, prefix="/api/stories", tags=["Stories"], dependencies=[Depends(verify_api_key)])
 app.include_router(chapters_router, prefix="/api/chapters", tags=["Chapters"], dependencies=[Depends(verify_api_key)])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"], dependencies=[Depends(verify_api_key)])

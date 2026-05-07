@@ -29,8 +29,8 @@ class ChapterWriterAgent(ABC):
         """写一章完整草稿"""
 
     @abstractmethod
-    async def write_draft_stream(self, story: Story, chapter_number: int, context: str,
-                                 temperature: Optional[float] = None) -> AsyncGenerator[dict, None]:
+    def write_draft_stream(self, story: Story, chapter_number: int, context: str,
+                           temperature: Optional[float] = None) -> AsyncGenerator[dict, None]:
         """流式写章节"""
 
     @abstractmethod

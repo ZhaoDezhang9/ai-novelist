@@ -1,8 +1,6 @@
 """情感节奏分析器 - 程序化情感曲线控制"""
 import json
 import re
-import math
-from collections import Counter
 from backend.core.models import ChapterRecord, EmotionSample, CheckResult
 from backend.core.llm_client import fast_llm
 from backend.core.utils import extract_json
@@ -104,9 +102,9 @@ class EmotionalCurveAnalyzer:
         if not expected:
             return CheckResult(passed=True, layer="emotion", issues=[], scores={"emotion_match": 10.0})
 
-        tension_diff = abs(avg_tension - expected["tension"])
-        sadness_diff = abs(avg_sadness - expected["sadness"])
-        pleasure_diff = abs(avg_pleasure - expected["pleasure"])
+        tension_diff = abs(avg_tension - expected["tension"])  # type: ignore[operator]
+        sadness_diff = abs(avg_sadness - expected["sadness"])  # type: ignore[operator]
+        pleasure_diff = abs(avg_pleasure - expected["pleasure"])  # type: ignore[operator]
         total_diff = (tension_diff + sadness_diff + pleasure_diff) / 3
 
         score = max(0, 10.0 - total_diff)
