@@ -2,11 +2,13 @@
 
 全流程闭环：大纲→逐章写作→多层防御质控→记忆上下文→伏笔管理
 """
+import os
 from uuid import uuid4
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -73,7 +75,6 @@ app.include_router(stories_router, prefix="/api/stories", tags=["Stories"], depe
 app.include_router(chapters_router, prefix="/api/chapters", tags=["Chapters"], dependencies=[Depends(verify_api_key)])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"], dependencies=[Depends(verify_api_key)])
 
-
 @app.get("/api/health")
 async def health():
     """深度健康检查 — DB + LLM API 可达性"""
@@ -107,6 +108,12 @@ async def health():
         result["status"] = "degraded"
 
     return result
+
+
+# 前端静态文件（必须在所有路由之后）
+dist_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="frontend")
 
 
 if __name__ == "__main__":
