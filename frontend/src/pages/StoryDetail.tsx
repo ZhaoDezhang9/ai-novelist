@@ -37,8 +37,15 @@ export default function StoryDetail() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [writingAll, setWritingAll] = useState(false);
-  const [writeAllProgress, setWriteAllProgress] = useState({ current: 0, target: 0 });
+  const WA_KEY = id ? `writeall-${id}` : null;
+  const [writingAll, setWritingAll] = useState(() => {
+    if (!WA_KEY) return false;
+    try { return !!localStorage.getItem(WA_KEY); } catch { return false; }
+  });
+  const [writeAllProgress, setWriteAllProgress] = useState(() => {
+    if (!WA_KEY) return { current: 0, target: 0 };
+    try { const v = localStorage.getItem(WA_KEY); return v ? JSON.parse(v) : { current: 0, target: 0 }; } catch { return { current: 0, target: 0 }; }
+  });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [rewriting, setRewriting] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -63,6 +70,29 @@ export default function StoryDetail() {
       .then(([s, c]) => { setStory(s); setChapters(c); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    // Resume polling if write-all was active before navigation/refresh
+    if (WA_KEY && localStorage.getItem(WA_KEY)) {
+      const saved = localStorage.getItem(WA_KEY);
+      if (saved) {
+        try { setWriteAllProgress(JSON.parse(saved)); } catch {}
+        setWritingAll(true);
+        pollRef.current = setInterval(async () => {
+          try {
+            const chs = await api.listChapters(id);
+            const target = JSON.parse(localStorage.getItem(WA_KEY) || "{}").target || 0;
+            const progress = { current: chs.length, target };
+            setWriteAllProgress(progress);
+            localStorage.setItem(WA_KEY, JSON.stringify(progress));
+            if (chs.length >= target && target > 0) {
+              clearInterval(pollRef.current!); pollRef.current = null;
+              setWritingAll(false); localStorage.removeItem(WA_KEY);
+              setChapters(chs);
+              api.getStory(id).then((s) => setStory(s));
+            }
+          } catch {}
+        }, 3000);
+      }
+    }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [id]);
 
@@ -105,10 +135,17 @@ export default function StoryDetail() {
     setError("");
     const target = story?.config?.target_chapters || 0;
     const current = story?.current_chapter || 0;
-    setWriteAllProgress({ current, target });
+    const progress = { current, target };
+    setWriteAllProgress(progress);
+    if (WA_KEY) localStorage.setItem(WA_KEY, JSON.stringify(progress));
     pollRef.current = setInterval(async () => {
-      try { const chs = await api.listChapters(id); setWriteAllProgress({ current: chs.length, target }); } catch {}
-    }, 2000);
+      try {
+        const chs = await api.listChapters(id);
+        const p = { current: chs.length, target };
+        setWriteAllProgress(p);
+        if (WA_KEY) localStorage.setItem(WA_KEY, JSON.stringify(p));
+      } catch {}
+    }, 3000);
     try {
       await api.writeAll(id, current + 1);
       const newChapters = await api.listChapters(id);
@@ -118,6 +155,7 @@ export default function StoryDetail() {
     finally {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       setWritingAll(false);
+      if (WA_KEY) localStorage.removeItem(WA_KEY);
     }
   };
 
@@ -209,7 +247,7 @@ export default function StoryDetail() {
       )}
 
       {/* Action buttons */}
-      <div style={{ display: "flex", gap: space[3], marginBottom: space[5], flexWrap: "wrap" }}>
+      <div className="storydetail-actions" style={{ display: "flex", gap: space[3], marginBottom: space[5], flexWrap: "wrap" }}>
         <button onClick={handleWriteNext} disabled={streaming || writingAll} style={{ ...btn.primary, opacity: streaming || writingAll ? 0.6 : 1 }}>
           {streaming ? "生成中..." : "流式写下一章"}
         </button>
@@ -219,11 +257,17 @@ export default function StoryDetail() {
         <button onClick={writeAll} disabled={writingAll || streaming} style={{ ...btn.warning, opacity: writingAll || streaming ? 0.6 : 1 }}>
           {writingAll ? "自动写作中..." : "写完剩余章节"}
         </button>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center", borderLeft: `1px solid ${colors.border}`, paddingLeft: space[3] }}>
+          <span style={{ fontSize: "12px", color: colors.muted }}>导出:</span>
+          <a href={api.getExportUrl(id, "txt")} style={{ ...btn.tag, ...btn.tagInactive, textDecoration: "none" }}>TXT</a>
+          <a href={api.getExportUrl(id, "html")} style={{ ...btn.tag, ...btn.tagInactive, textDecoration: "none" }}>HTML</a>
+          <a href={api.getExportUrl(id, "epub")} style={{ ...btn.tag, ...btn.tagInactive, textDecoration: "none" }}>EPUB</a>
+        </div>
       </div>
 
       {/* Streaming live preview */}
       {gen && gen.contentChunks.length > 0 && (
-        <div style={{ ...card, marginBottom: space[5], padding: space[5], maxHeight: "400px", overflow: "auto", whiteSpace: "pre-wrap" as const, fontSize: "14px", lineHeight: "1.9", color: colors.fg, fontFamily: "inherit" }}>
+        <div className="storydetail-preview" style={{ ...card, marginBottom: space[5], padding: space[5], maxHeight: "400px", overflow: "auto", whiteSpace: "pre-wrap" as const, fontSize: "14px", lineHeight: "1.9", color: colors.fg, fontFamily: "inherit" }}>
           {gen.contentChunks.join("")}
           {streaming && <span style={{ animation: "blink 0.8s infinite", color: colors.primary }}>&#9608;</span>}
           <div style={{ ...font.xs, color: colors.textMuted, marginTop: space[3], paddingTop: space[3], borderTop: `1px solid ${colors.border}` }}>
@@ -234,7 +278,7 @@ export default function StoryDetail() {
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "4px", marginBottom: space[5], borderBottom: `1px solid ${colors.border}`, opacity: focusMode ? 0 : 1, transition: "opacity 0.2s" }}>
+      <div className="storydetail-tabs" style={{ display: "flex", gap: "4px", marginBottom: space[5], borderBottom: `1px solid ${colors.border}`, opacity: focusMode ? 0 : 1, transition: "opacity 0.2s" }}>
         <TabPanel tabs={tabDefs} activeTab={activeTab} onTabChange={(t) => setActiveTab(t as Tab)} />
         <div style={{ flex: 1 }} />
         <button onClick={() => setFocusMode(!focusMode)} style={{
@@ -249,7 +293,7 @@ export default function StoryDetail() {
 
       {/* Chapters Tab */}
       {activeTab === "chapters" && (
-        <div style={{ display: "flex", gap: space[5], opacity: focusMode ? 0.3 : 1, transition: "opacity 0.2s" }}>
+        <div className="storydetail-chapters" style={{ display: "flex", gap: space[5], opacity: focusMode ? 0.3 : 1, transition: "opacity 0.2s" }}>
           <div style={{ width: focusMode ? "0" : "220px", flexShrink: 0, overflow: focusMode ? "hidden" : "auto", transition: "width 0.3s ease" }}>
             {chapters.length === 0 ? (
               <div style={{ color: colors.textDim, fontSize: "13px", padding: `${space[4]} 0` }}>暂无章节</div>
@@ -330,6 +374,7 @@ export default function StoryDetail() {
         </div>
       )}
 
+      <ResponsiveStyles />
       {/* Foreshadowing Tab */}
       {activeTab === "foreshadowing" && (
         <div style={{ display: "flex", flexDirection: "column", gap: space[2] }}>
@@ -450,5 +495,25 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 style={{ ...font.md, fontWeight: 600, color: colors.primary, marginBottom: space[2] }}>{title}</h3>
       <div style={{ color: colors.fgSecondary, lineHeight: "1.8", fontSize: "14px" }}>{children}</div>
     </div>
+  );
+}
+
+function ResponsiveStyles() {
+  return (
+    <style>{`
+      @media (max-width: 768px) {
+        .storydetail-chapters { flex-direction: column !important; }
+        .storydetail-chapters > div:first-child { width: 100% !important; max-height: 200px; overflow-y: auto; }
+        .storydetail-tabs { flex-wrap: wrap; gap: 4px; }
+        .storydetail-actions { gap: 8px; }
+        .storydetail-actions button, .storydetail-actions a { font-size: 12px; padding: 6px 10px; }
+        .storydetail-preview { max-height: 250px !important; font-size: 13px !important; }
+      }
+      @media (max-width: 480px) {
+        .storydetail-actions { flex-direction: column; align-items: stretch; }
+        .storydetail-actions > * { width: 100%; text-align: center; justify-content: center; }
+        .storydetail-actions > div { border-left: none !important; padding-left: 0 !important; border-top: 1px solid ${colors.border}; padding-top: 8px; }
+      }
+    `}</style>
   );
 }

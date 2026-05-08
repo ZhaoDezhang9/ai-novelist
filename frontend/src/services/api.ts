@@ -301,6 +301,9 @@ export const api = {
   getSettings: async (opts?: ApiCallOptions): Promise<AppSettings> =>
     apiFetch<AppSettings>(`${BASE}/settings`, { signal: opts?.signal, retries: 2 }),
 
+  getExportUrl: (storyId: string, format: "txt" | "html" | "epub"): string =>
+    `${BASE}/stories/${storyId}/export?format=${format}`,
+
   updateSettings: async (settings: Partial<AppSettings>, opts?: ApiCallOptions): Promise<AppSettings> =>
     apiFetch<AppSettings>(`${BASE}/settings`, {
       method: "PUT",

@@ -34,6 +34,7 @@ export default function Reader() {
   const [loading, setLoading] = useState(true);
   const [chapterLoading, setChapterLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,8 +77,12 @@ export default function Reader() {
   if (!story) return <div style={s.centered}>故事不存在</div>;
 
   return (
-    <div style={s.layout}>
-      <aside style={s.sidebar}>
+    <div className="reader-layout" style={s.layout}>
+      <div className={`reader-overlay${sidebarVisible ? " open" : ""}`} onClick={() => setSidebarVisible(false)} style={{
+        display: sidebarVisible ? "block" : "none", position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.4)", zIndex: 99,
+      }} />
+      <aside className={`reader-sidebar${sidebarVisible ? " open" : ""}`} style={s.sidebar}>
         <div style={s.sidebarHeader}>
           <Link to={`/story/${id}`} style={s.backLink}>&larr; 返回详情</Link>
           <div style={s.sidebarTitle}>章节目录</div>
@@ -99,12 +104,12 @@ export default function Reader() {
         <TabPanel tabs={tabDefs} activeTab={activeTab} onTabChange={setActiveTab} />
 
         {activeTab === "reading" && (
-          <div style={s.readingPanel}>
+          <div className="reader-reading-panel" style={s.readingPanel}>
             {chapterLoading ? <div style={s.centered}>加载中...</div> :
             selectedChapter ? (
-              <div ref={contentRef} style={s.readingArea}>
+              <div ref={contentRef} className="reader-reading-area" style={s.readingArea}>
                 <div style={s.chapterHeader}>
-                  <h2 style={s.chapterH2}>第{selectedChapter.chapter_number}章 · {selectedChapter.title}</h2>
+                  <h2 className="reader-chapter-h2" style={s.chapterH2}>第{selectedChapter.chapter_number}章 · {selectedChapter.title}</h2>
                   <div style={s.chapterMeta}>
                     {selectedChapter.content.replace(/\s/g, "").length} 字
                     {selectedChapter.rewrites_count > 0 && ` · 已改写${selectedChapter.rewrites_count}次`}
@@ -125,14 +130,35 @@ export default function Reader() {
         {activeTab === "characters" && story && <CharactersTab story={story} />}
         {activeTab === "outline" && story && <OutlineTab story={story} chapters={chapters} />}
       </main>
+      <button className="reader-sidebar-toggle" onClick={() => setSidebarVisible(!sidebarVisible)} style={s.sidebarToggle}>
+        {sidebarVisible ? "\u2715" : "\u2630"}
+      </button>
+      <style>{`
+        @media (max-width: 768px) {
+          .reader-layout { grid-template-columns: 1fr !important; }
+          .reader-sidebar { position: fixed !important; top: 0; left: 0; bottom: 0; z-index: 100; width: 260px; transform: translateX(-100%); }
+          .reader-sidebar.open { transform: translateX(0); }
+          .reader-sidebar-toggle { display: flex !important; }
+          .reader-viz-grid { grid-template-columns: 1fr !important; max-width: 100% !important; }
+          .reader-viz-panel { padding: 16px !important; }
+          .reader-char-grid { grid-template-columns: 1fr !important; }
+          .reader-reading-area { max-width: 100% !important; padding: 20px 16px 40px !important; font-size: 15px !important; max-height: none !important; }
+          .reader-reading-panel { min-height: auto !important; }
+          .reader-chapter-h2 { font-size: 20px !important; }
+        }
+        @media (max-width: 480px) {
+          .reader-reading-area { padding: 12px 12px 32px !important; font-size: 14px !important; line-height: 1.8 !important; }
+          .reader-chapter-h2 { font-size: 18px !important; }
+        }
+      `}</style>
     </div>
   );
 }
 
 function QualityTab({ chapter }: { chapter: ChapterDetail }) {
   return (
-    <div style={s.vizPanel}>
-      <div style={s.vizGrid}>
+    <div className="reader-viz-panel" style={s.vizPanel}>
+      <div className="reader-viz-grid" style={s.vizGrid}>
         <div style={s.chartWrap}>
           <ResponsiveContainer width="100%" height={300}>
             <RadarChart data={(chapter.check_results || []).map((cr) => ({
@@ -171,7 +197,7 @@ function QualityTab({ chapter }: { chapter: ChapterDetail }) {
 
 function EmotionTab({ chapter }: { chapter: ChapterDetail }) {
   return (
-    <div style={s.vizPanel}>
+    <div className="reader-viz-panel" style={s.vizPanel}>
       <div style={s.vizTitle}>情绪曲线</div>
       {chapter.emotion_curve?.length > 0 ? (
         <ResponsiveContainer width="100%" height={300}>
@@ -195,7 +221,7 @@ function EmotionTab({ chapter }: { chapter: ChapterDetail }) {
 
 function CharactersTab({ story }: { story: StoryDetail }) {
   return (
-    <div style={s.vizPanel}>
+    <div className="reader-viz-panel" style={s.vizPanel}>
       <div style={s.charGrid}>
         <div style={s.chartWrap}>
           <CharacterGraph characters={story.characters || []} />
@@ -222,7 +248,7 @@ function CharactersTab({ story }: { story: StoryDetail }) {
 
 function OutlineTab({ story, chapters }: { story: StoryDetail; chapters: ChapterInfo[] }) {
   return (
-    <div style={s.vizPanel}>
+    <div className="reader-viz-panel" style={s.vizPanel}>
       <h3 style={{ ...s.vizTitle, textAlign: "center" }}>故事大纲</h3>
       {groupByAct(story.outline || []).map(([act, nodes]) => (
         <div key={act} style={{ marginBottom: 32 }}>
@@ -260,7 +286,8 @@ function groupByAct(outline: any[]): [string, any[]][] {
 const s: Record<string, React.CSSProperties> = {
   layout: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 0, minHeight: "100vh" },
   centered: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: space[16], color: colors.muted },
-  sidebar: { borderRight: `1px solid ${colors.border}`, padding: "24px 0", background: colors.surface, overflowY: "auto", maxHeight: "100vh", position: "sticky", top: 0 },
+  sidebar: { borderRight: `1px solid ${colors.border}`, padding: "24px 0", background: colors.surface, overflowY: "auto", maxHeight: "100vh", position: "sticky", top: 0, transition: "transform 0.25s ease" },
+  sidebarToggle: { display: "none", position: "fixed", bottom: "20px", right: "20px", zIndex: 200, width: "44px", height: "44px", borderRadius: "50%", background: colors.accent, color: "#fff", border: "none", fontSize: "18px", cursor: "pointer", boxShadow: "0 2px 12px rgba(0,0,0,0.3)", alignItems: "center", justifyContent: "center" },
   sidebarHeader: { padding: "0 20px 16px", borderBottom: `1px solid ${colors.borderLight}`, marginBottom: 8 },
   backLink: { color: colors.muted, fontSize: 12, textDecoration: "none" },
   sidebarTitle: { fontFamily: fonts.display, fontSize: 15, fontWeight: 600, color: colors.fg, marginTop: 8 },

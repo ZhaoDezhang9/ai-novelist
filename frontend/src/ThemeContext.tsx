@@ -41,4 +41,9 @@ export function useTheme() {
   return context;
 }
 
+export function useColors() {
+  const { theme } = useTheme();
+  return theme === "dark" ? colorsDark : colors;
+}
+
 export { colors, colorsDark };

@@ -1,4 +1,4 @@
-import { useState, CSSProperties } from "react";
+import { useState, CSSProperties, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api, StoryListItem } from "../services/api";
 import { useApi } from "../hooks/useApi";
@@ -6,6 +6,15 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../components/ToastProvider";
 import { colors, space, font, bp, shadows, radius, genreColors, btn, layout } from "../styles";
+
+const GENRES = ["全部", "仙侠", "玄幻", "都市", "科幻", "言情", "悬疑", "历史", "武侠", "游戏", "奇幻", "灵异", "军事", "体育", "其他"];
+const STATUSES = ["全部", "writing", "completed", "draft"];
+const STATUS_LABELS: Record<string, string> = { writing: "创作中", completed: "已完成", draft: "草稿" };
+const SORT_OPTIONS = [
+  { value: "newest", label: "最近更新" },
+  { value: "progress", label: "进度最高" },
+  { value: "chapters", label: "章节最多" },
+];
 
 const styles: Record<string, React.CSSProperties> = {
   pageHeader: {
@@ -270,6 +279,52 @@ function StoryCard({ story, onDelete }: CardProps) {
   );
 }
 
+interface FilterBarProps {
+  query: string; onQueryChange: (v: string) => void;
+  genre: string; onGenreChange: (v: string) => void;
+  status: string; onStatusChange: (v: string) => void;
+  sort: string; onSortChange: (v: string) => void;
+}
+
+function FilterBar({ query, onQueryChange, genre, onGenreChange, status, onStatusChange, sort, onSortChange }: FilterBarProps) {
+  const chipStyle = (active: boolean): CSSProperties => ({
+    padding: "3px 10px", fontSize: "12px", borderRadius: "14px", cursor: "pointer",
+    border: `1px solid ${active ? colors.accent : colors.border}`,
+    background: active ? colors.accent : "transparent",
+    color: active ? "#fff" : colors.muted, fontWeight: active ? 500 : 400,
+    transition: "all 0.15s", whiteSpace: "nowrap",
+  });
+  return (
+    <div style={{ marginBottom: space[5] }}>
+      <div style={{ display: "flex", gap: space[3], marginBottom: space[3], flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          type="text" placeholder="搜索故事..." value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          style={{
+            width: "220px", padding: "6px 12px", fontSize: "13px", border: `1px solid ${colors.border}`,
+            borderRadius: "6px", background: colors.surface, color: colors.fg, outline: "none",
+          }}
+        />
+        {SORT_OPTIONS.map((o) => (
+          <span key={o.value} style={chipStyle(sort === o.value)} onClick={() => onSortChange(o.value)}>{o.label}</span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+        {GENRES.map((g) => (
+          <span key={g} style={chipStyle(genre === g)} onClick={() => onGenreChange(g)}>{g}</span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+        {STATUSES.map((st) => (
+          <span key={st} style={chipStyle(status === st)} onClick={() => onStatusChange(st)}>
+            {st === "全部" ? "全部状态" : STATUS_LABELS[st] || st}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SkeletonCard() {
   return (
     <div style={styles.skeletonCard}>
@@ -301,8 +356,38 @@ function SkeletonCard() {
 export default function StoryList() {
   const { data: stories, loading, error, refetch } = useApi<StoryListItem[]>((signal) => api.listStories({ signal }), []);
   const { show } = useToast();
+  const [query, setQuery] = useState("");
+  const [genreFilter, setGenreFilter] = useState("全部");
+  const [statusFilter, setStatusFilter] = useState("全部");
+  const [sortBy, setSortBy] = useState("newest");
 
-  const totalChapters = stories?.reduce((sum, s) => sum + s.current_chapter, 0) || 0;
+  const filtered = useMemo(() => {
+    if (!stories) return [];
+    let result = [...stories];
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      result = result.filter((s) => s.title.toLowerCase().includes(q));
+    }
+    if (genreFilter !== "全部") {
+      result = result.filter((s) => s.genre === genreFilter);
+    }
+    if (statusFilter !== "全部") {
+      result = result.filter((s) => s.status === statusFilter);
+    }
+    switch (sortBy) {
+      case "progress":
+        result.sort((a, b) => (b.current_chapter / b.target_chapters) - (a.current_chapter / a.target_chapters));
+        break;
+      case "chapters":
+        result.sort((a, b) => b.current_chapter - a.current_chapter);
+        break;
+      default:
+        result.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    }
+    return result;
+  }, [stories, query, genreFilter, statusFilter, sortBy]);
+
+  const totalChapters = filtered.reduce((sum, s) => sum + s.current_chapter, 0);
 
   const handleDelete = async (id: string) => {
     try {
@@ -370,17 +455,30 @@ export default function StoryList() {
           <h1 style={styles.pageTitle}>小说集</h1>
           <p style={styles.pageSubtitle}>
             已创作 {stories.length} 部作品 · 共 {totalChapters} 章
+            {filtered.length !== stories.length && ` · 筛选出 ${filtered.length} 部`}
           </p>
         </div>
         <Link to="/create" style={styles.createBtn}>
           开始创作
         </Link>
       </div>
-      <div id="story-grid" style={styles.grid}>
-        {stories.map((story) => (
-          <StoryCard key={story.id} story={story} onDelete={handleDelete} />
-        ))}
-      </div>
+
+      <FilterBar
+        query={query} onQueryChange={setQuery}
+        genre={genreFilter} onGenreChange={setGenreFilter}
+        status={statusFilter} onStatusChange={setStatusFilter}
+        sort={sortBy} onSortChange={setSortBy}
+      />
+
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", padding: space[10], color: colors.muted }}>没有匹配的故事</div>
+      ) : (
+        <div id="story-grid" style={styles.grid}>
+          {filtered.map((story) => (
+            <StoryCard key={story.id} story={story} onDelete={handleDelete} />
+          ))}
+        </div>
+      )}
       <style>{`
         ${bp.md} {
           #story-grid { grid-template-columns: 1fr !important; }

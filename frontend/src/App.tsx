@@ -1,16 +1,26 @@
-import React, { useState } from "react";
+import React, { useState, Suspense, lazy } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
-import StoryList from "./pages/StoryList";
-import StoryCreate from "./pages/StoryCreate";
-import StoryDetail from "./pages/StoryDetail";
-import Reader from "./pages/Reader";
-import Settings from "./pages/Settings";
 import { useGenerationStore } from "./stores/generationStore";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalAnimations from "./components/GlobalAnimations";
 import { ToastProvider } from "./components/ToastProvider";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 import { colors, layout, font, space, bp, scrollbar, shadows, radius, fonts } from "./styles";
+
+const StoryList = lazy(() => import("./pages/StoryList"));
+const StoryCreate = lazy(() => import("./pages/StoryCreate"));
+const StoryDetail = lazy(() => import("./pages/StoryDetail"));
+const Reader = lazy(() => import("./pages/Reader"));
+const Settings = lazy(() => import("./pages/Settings"));
+
+function PageLoader() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: layout.centered.padding, color: colors.muted }}>
+      <span style={{ animation: "spin 1s linear infinite", fontSize: "20px", marginRight: space[2] }}>&#9696;</span>
+      加载中...
+    </div>
+  );
+}
 
 const NAV_ITEMS = [
   { path: "/", label: "小说集" },
@@ -151,13 +161,15 @@ function AppInner() {
       {/* Main Content */}
       <main className="app-main" style={{ ...layout.main, overflow: "auto", height: "100vh", marginLeft: "220px", paddingTop: "56px" }}>
         <div style={layout.page}>
-          <Routes>
-            <Route path="/" element={<StoryList />} />
-            <Route path="/create" element={<StoryCreate />} />
-            <Route path="/story/:id" element={<StoryDetail />} />
-            <Route path="/story/:id/reader" element={<Reader />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<StoryList />} />
+              <Route path="/create" element={<StoryCreate />} />
+              <Route path="/story/:id" element={<StoryDetail />} />
+              <Route path="/story/:id/reader" element={<Reader />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Suspense>
         </div>
       </main>
 

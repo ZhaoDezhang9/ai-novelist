@@ -20,6 +20,7 @@ from backend.memory.story_db import init_db
 from backend.api.stories import router as stories_router
 from backend.api.chapters import router as chapters_router
 from backend.api.settings import router as settings_router
+from backend.api.export import router as export_router
 
 setup_logging()
 log = get_logger(component="main")
@@ -83,6 +84,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(stories_router, prefix="/api/stories", tags=["Stories"], dependencies=[Depends(verify_api_key)])
 app.include_router(chapters_router, prefix="/api/chapters", tags=["Chapters"], dependencies=[Depends(verify_api_key)])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"], dependencies=[Depends(verify_api_key)])
+app.include_router(export_router, prefix="/api/stories", tags=["Stories"], dependencies=[Depends(verify_api_key)])
 
 @app.get("/api/health")
 async def health():
