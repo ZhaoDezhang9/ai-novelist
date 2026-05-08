@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AI Novelist",
     description="全自动AI小说创作系统 - 闭环流水线",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
