@@ -129,21 +129,28 @@ async def create_story(body: CreateStoryRequest):
 @router.get("")
 async def list_stories():
     """列出所有故事"""
+    from backend.core.logging import get_logger
+    log = get_logger(component="api.stories")
     stories = await story_db.list_stories()
     result = []
     for s in stories:
-        config = s.get("config", {})
-        if isinstance(config, dict):
+        try:
+            config = s.get("config", {})
+            if not isinstance(config, dict):
+                continue
             result.append(StoryListItem(
                 id=s["id"],
-                title=config.get("title", "未命名"),
-                genre=config.get("genre", "未知"),
-                style=config.get("style", "默认"),
+                title=str(config.get("title", "未命名")),
+                genre=str(config.get("genre", "未知")),
+                style=str(config.get("style", "默认")),
                 current_chapter=s.get("current_chapter", 0),
                 target_chapters=config.get("target_chapters", 50),
                 status=s.get("status", "draft"),
                 created_at=s.get("created_at", ""),
             ))
+        except Exception as e:
+            log.warning("list_stories_skip", story_id=s.get("id"), error=str(e))
+            continue
     return result
 
 
@@ -151,7 +158,10 @@ async def list_stories():
 async def get_story(story_id: str):
     """获取故事详情"""
     orchestrator = NovelOrchestrator()
-    story = await orchestrator.load_story(story_id)
+    try:
+        story = await orchestrator.load_story(story_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"加载故事失败: {e}")
     if not story:
         raise HTTPException(status_code=404, detail="故事不存在")
     return {

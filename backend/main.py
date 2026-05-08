@@ -70,6 +70,15 @@ async def add_correlation_id(request: Request, call_next):
     return response
 
 
+# 全局异常处理
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    log.error("unhandled_exception", path=request.url.path, error=str(exc), traceback=traceback.format_exc())
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={"detail": f"服务器错误: {exc}"})
+
+
 # API 路由 (with auth)
 app.include_router(stories_router, prefix="/api/stories", tags=["Stories"], dependencies=[Depends(verify_api_key)])
 app.include_router(chapters_router, prefix="/api/chapters", tags=["Chapters"], dependencies=[Depends(verify_api_key)])
