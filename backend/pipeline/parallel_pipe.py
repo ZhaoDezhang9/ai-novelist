@@ -1,16 +1,76 @@
 """并行流水线 - 多维度统一质检 + 流水线化写下一章"""
 import asyncio
 import json
+import re
+import logging
 from typing import Optional
 from backend.core.models import ChapterRecord, CheckResult, QualityScores
 from backend.core.llm_client import fast_llm
 from backend.core.utils import extract_json
 from backend.generation.prompt_templates import MULTI_DIM_ASSESSMENT_PROMPT
 
+logger = logging.getLogger(__name__)
+
 
 class ParallelPipeline:
     def __init__(self):
         pass
+
+    @staticmethod
+    def _repair_json(raw: str) -> str:
+        """修复常见 LLM JSON 输出问题"""
+        text = raw.strip()
+        # 移除 markdown 代码块包裹
+        m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+        if m:
+            text = m.group(1).strip()
+        # 找到最外层 JSON 对象或数组
+        start = text.find('[')
+        if start != -1:
+            # 如果是数组，尝试提取第一个对象
+            obj_start = text.find('{', start)
+            if obj_start != -1:
+                start = obj_start
+        if start == -1:
+            start = text.find('{')
+        if start == -1:
+            raise ValueError("No JSON object found in response")
+        depth = 0
+        end = start
+        for i, ch in enumerate(text[start:], start):
+            if ch in ('{', '['):
+                depth += 1
+            elif ch in ('}', ']'):
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        text = text[start:end]
+        # 修复常见错误：尾部逗号（在 ] 或 } 之前）
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+        # 修复单引号 key/value
+        text = re.sub(r"'", '"', text)
+        return text
+
+    @staticmethod
+    def _parse_assessment_json(raw: str) -> dict:
+        """解析 LLM 返回的质量评估 JSON，带多层回退"""
+        try:
+            data = json.loads(extract_json(raw))
+        except json.JSONDecodeError:
+            try:
+                data = json.loads(ParallelPipeline._repair_json(raw))
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"多维度评估JSON修复失败: {e}\nraw={raw[:500]}")
+                raise
+        # LLM 可能返回数组包裹的对象: [{...}]
+        if isinstance(data, list):
+            if data and isinstance(data[0], dict):
+                return data[0]
+            raise ValueError(f"Unexpected JSON array: {str(data)[:200]}")
+        if not isinstance(data, dict):
+            raise ValueError(f"Unexpected JSON type: {type(data).__name__}: {str(data)[:200]}")
+        return data
 
     async def run_multi_dimension_check(
         self,
@@ -45,12 +105,12 @@ class ParallelPipeline:
             context_parts.append("【角色设定】\n" + "\n".join(chars))
 
         context = "\n\n".join(context_parts) if context_parts else "无额外上下文"
-        system = MULTI_DIM_ASSESSMENT_PROMPT.format(context=context)
+        system = MULTI_DIM_ASSESSMENT_PROMPT.replace("{context}", context)
         user = f"请评估以下章节：\n\n{chapter.content[:6000]}"
 
         try:
             raw = await fast_llm.chat(system, user, temperature=0.2, max_tokens=1500)
-            data = json.loads(extract_json(raw))
+            data = self._parse_assessment_json(raw)
 
             quality_scores = QualityScores(
                 coherence=float(data.get("coherence", 7)),
