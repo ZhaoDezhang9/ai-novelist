@@ -1,6 +1,6 @@
 """单元测试 — API 路由 mock LLM"""
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi.testclient import TestClient
 
 
@@ -64,4 +64,3 @@ class TestStoriesAPI:
             assert data["id"] == "test-1"
 
 
-from unittest.mock import MagicMock

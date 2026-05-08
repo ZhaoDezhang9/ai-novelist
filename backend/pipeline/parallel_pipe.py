@@ -1,12 +1,10 @@
 """并行流水线 - 多维度统一质检 + 流水线化写下一章"""
 import asyncio
-import json
-import re
 import logging
 from typing import Optional
 from backend.core.models import ChapterRecord, CheckResult, QualityScores
 from backend.core.llm_client import fast_llm
-from backend.core.utils import extract_json
+from backend.core.utils import parse_llm_json
 from backend.generation.prompt_templates import MULTI_DIM_ASSESSMENT_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -15,62 +13,6 @@ logger = logging.getLogger(__name__)
 class ParallelPipeline:
     def __init__(self):
         pass
-
-    @staticmethod
-    def _repair_json(raw: str) -> str:
-        """修复常见 LLM JSON 输出问题"""
-        text = raw.strip()
-        # 移除 markdown 代码块包裹
-        m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if m:
-            text = m.group(1).strip()
-        # 找到最外层 JSON 对象或数组
-        start = text.find('[')
-        if start != -1:
-            # 如果是数组，尝试提取第一个对象
-            obj_start = text.find('{', start)
-            if obj_start != -1:
-                start = obj_start
-        if start == -1:
-            start = text.find('{')
-        if start == -1:
-            raise ValueError("No JSON object found in response")
-        depth = 0
-        end = start
-        for i, ch in enumerate(text[start:], start):
-            if ch in ('{', '['):
-                depth += 1
-            elif ch in ('}', ']'):
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        text = text[start:end]
-        # 修复常见错误：尾部逗号（在 ] 或 } 之前）
-        text = re.sub(r',\s*([}\]])', r'\1', text)
-        # 修复单引号 key/value
-        text = re.sub(r"'", '"', text)
-        return text
-
-    @staticmethod
-    def _parse_assessment_json(raw: str) -> dict:
-        """解析 LLM 返回的质量评估 JSON，带多层回退"""
-        try:
-            data = json.loads(extract_json(raw))
-        except json.JSONDecodeError:
-            try:
-                data = json.loads(ParallelPipeline._repair_json(raw))
-            except (json.JSONDecodeError, ValueError) as e:
-                logger.warning(f"多维度评估JSON修复失败: {e}\nraw={raw[:500]}")
-                raise
-        # LLM 可能返回数组包裹的对象: [{...}]
-        if isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                return data[0]
-            raise ValueError(f"Unexpected JSON array: {str(data)[:200]}")
-        if not isinstance(data, dict):
-            raise ValueError(f"Unexpected JSON type: {type(data).__name__}: {str(data)[:200]}")
-        return data
 
     async def run_multi_dimension_check(
         self,
@@ -110,7 +52,11 @@ class ParallelPipeline:
 
         try:
             raw = await fast_llm.chat(system, user, temperature=0.2, max_tokens=1500)
-            data = self._parse_assessment_json(raw)
+            data = parse_llm_json(raw)
+            if isinstance(data, list):
+                data = data[0] if data else {}
+            if not isinstance(data, dict):
+                raise ValueError(f"Unexpected JSON type: {type(data).__name__}")
 
             quality_scores = QualityScores(
                 coherence=float(data.get("coherence", 7)),
@@ -139,12 +85,65 @@ class ParallelPipeline:
                 },
                 quality_scores=quality_scores,
             )
-        except Exception as e:
+        except Exception:
+            # JSON解析失败，尝试从markdown表格中提取分数
+            try:
+                return self._parse_markdown_assessment(raw)
+            except Exception:
+                pass
             return CheckResult(
                 passed=False,
                 layer="multi_dim",
-                issues=[{"type": "check_error", "severity": "critical", "description": f"多维度评估异常: {e}"}],
+                issues=[{"type": "check_error", "severity": "critical", "description": "多维度评估JSON解析失败"}],
             )
+
+    def _parse_markdown_assessment(self, raw: str) -> CheckResult:
+        """从LLM返回的markdown表格中提取评分（回退方案）"""
+        import re
+        # 匹配表格行: | 一致性 (coherence) | 8 | ... |
+        dim_map = {
+            "coherence": "coherence", "一致性": "coherence",
+            "originality": "originality", "原创性": "originality",
+            "alignment": "alignment", "对齐": "alignment",
+            "emotion": "emotion", "情感": "emotion",
+            "style": "style", "风格": "style",
+        }
+        scores = {}
+        table_rows = re.findall(r'\|\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|', raw)
+        for name, score in table_rows:
+            name_lower = name.strip().lower()
+            for key, mapped in dim_map.items():
+                if key in name_lower:
+                    scores[mapped] = float(score)
+                    break
+
+        if not scores or len(scores) < 3:
+            raise ValueError("无法从markdown提取足够分数")
+
+        quality_scores = QualityScores(
+            coherence=scores.get("coherence", 7),
+            originality=scores.get("originality", 7),
+            alignment=scores.get("alignment", 7),
+            emotion=scores.get("emotion", 7),
+            style=scores.get("style", 7),
+            overall=sum(scores.values()) / len(scores),
+        )
+        min_dim = quality_scores.min_dimension()
+        passed = min_dim >= 5 and quality_scores.overall >= 6
+        return CheckResult(
+            passed=passed,
+            layer="multi_dim",
+            issues=[],
+            scores={
+                "coherence": quality_scores.coherence,
+                "originality": quality_scores.originality,
+                "alignment": quality_scores.alignment,
+                "emotion": quality_scores.emotion,
+                "style": quality_scores.style,
+                "overall": quality_scores.overall,
+            },
+            quality_scores=quality_scores,
+        )
 
     async def run_checks_parallel(
         self,

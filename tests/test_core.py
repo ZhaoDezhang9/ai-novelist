@@ -1,6 +1,6 @@
 """单元测试 — 后端核心逻辑，不依赖真实 LLM API"""
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 
 class TestAuth:
@@ -50,7 +50,7 @@ class TestAuth:
 
 class TestValidators:
     def test_valid_input_passes(self):
-        from backend.core.validators import validate_no_injection, validate_length
+        from backend.core.validators import validate_no_injection
         result = validate_no_injection("正常的中文标题和介绍")
         assert result == "正常的中文标题和介绍"
 
@@ -75,7 +75,6 @@ class TestHealthCheck:
     @pytest.mark.anyio
     async def test_health_endpoint(self):
         """测试 /api/health 返回结构正确"""
-        from unittest.mock import patch, AsyncMock
         from backend.main import app
         from fastapi.testclient import TestClient
 

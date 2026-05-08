@@ -347,7 +347,9 @@ def multi_dimension_assessment() -> str:
   ],
   "strengths": ["本章亮点1", "亮点2"],
   "rewrite_needed": true/false（任一维度<5或总分<6则为true）
-}}"""
+}}
+
+严格只输出以上JSON，不要用markdown表格、标题或任何其他格式。只输出纯JSON。"""
     )
 
 

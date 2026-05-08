@@ -4,7 +4,7 @@ import re
 import logging
 from backend.core.models import Story, WorldBible
 from backend.core.llm_client import planning_llm
-from backend.core.utils import extract_json
+from backend.core.utils import parse_llm_json
 from backend.generation.prompt_templates import (
     outline_system_prompt, outline_user_prompt,
     world_bible_system_prompt, character_system_prompt,
@@ -49,24 +49,39 @@ class OutlineEngine:
 
         raw = await planning_llm.chat(system, user, temperature=0.85, max_tokens=8000)
         try:
-            data = json.loads(extract_json(raw))
+            data = parse_llm_json(raw)
             if isinstance(data, dict):
                 for v in data.values():
                     if isinstance(v, list):
-                        return v
+                        return [x for x in v if isinstance(x, dict)]
                 return [data]
-            return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
+            if isinstance(data, list):
+                return [x for x in data if isinstance(x, dict)]
+            return []
+        except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
             logger.warning(f"解析角色数据失败: {e}")
             return [{"name": "主角", "role": "主角", "traits": "待定", "arc": "待定"}]
 
     def _parse_outline(self, raw: str, target_count: int) -> list[dict]:
         """解析LLM返回的大纲"""
         try:
-            data = json.loads(extract_json(raw))
+            data = parse_llm_json(raw)
             if isinstance(data, list):
                 return data[:target_count]
-        except (json.JSONDecodeError, IndexError) as e:
+            if isinstance(data, dict):
+                # LLM 可能返回 {"chapters": [...]} 或 {"outline": [...]}
+                for key in ("chapters", "outline", "data"):
+                    if key in data and isinstance(data[key], list):
+                        return data[key][:target_count]
+                # 或者返回 {1: {...}, 2: {...}} 按数字键
+                items: list[dict] = []
+                for k, v in sorted(data.items()):
+                    if isinstance(v, dict):
+                        v["chapter"] = v.get("chapter", len(items) + 1)
+                        items.append(v)
+                if items:
+                    return items[:target_count]
+        except (json.JSONDecodeError, ValueError) as e:
             logger.warning(f"解析大纲JSON失败，使用回退解析: {e}")
 
         # 手动解析回退
@@ -89,16 +104,45 @@ class OutlineEngine:
 
     def _parse_world_bible(self, raw: str) -> WorldBible:
         try:
-            data = json.loads(extract_json(raw))
+            data = parse_llm_json(raw)
             if isinstance(data, list):
                 data = data[0] if data else {}
+            # 规范化 rules: LLM 可能返回 [{"rule": "..."}] 或 ["..."]
+            rules = []
+            for r in data.get("rules", []):
+                if isinstance(r, dict):
+                    rules.append(r.get("rule", r.get("description", str(r))))
+                else:
+                    rules.append(str(r))
+            # 规范化 factions: LLM 可能返回 [{"name": "...", "description": "..."}] 或 ["..."]
+            factions = []
+            for f in data.get("factions", []):
+                if isinstance(f, dict):
+                    name = f.get("name", "")
+                    desc = f.get("description", "")
+                    factions.append(f"{name}：{desc}" if desc else name)
+                else:
+                    factions.append(str(f))
+            # 规范化 timeline: LLM 可能返回 [{"event": "...", "time": "..."}] 列表
+            timeline = data.get("timeline", {})
+            if isinstance(timeline, list):
+                tl_dict = {}
+                for t in timeline:
+                    if isinstance(t, dict):
+                        event = t.get("event", t.get("description", str(t)))
+                        tl_dict[event] = t.get("time", t.get("date", "未知"))
+                    else:
+                        tl_dict[str(t)] = "未知"
+                timeline = tl_dict
+            if not isinstance(timeline, dict):
+                timeline = {}
             return WorldBible(
                 setting=data.get("setting", ""),
-                rules=data.get("rules", []),
-                factions=data.get("factions", []),
-                timeline=data.get("timeline", {}),
+                rules=rules,
+                factions=factions,
+                timeline=timeline,
             )
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
+        except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
             logger.warning(f"解析世界观数据失败: {e}")
             return WorldBible(setting=raw[:500])
 
