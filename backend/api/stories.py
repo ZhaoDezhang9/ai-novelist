@@ -110,9 +110,11 @@ async def create_story(body: CreateStoryRequest):
             target_audience=body.target_audience,
             theme=body.theme,
         )
+        story = await orchestrator.create_story(config)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"参数无效: {e}")
-    story = await orchestrator.create_story(config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"创建失败: {e}")
     return {
         "id": story.id,
         "title": story.config.title,

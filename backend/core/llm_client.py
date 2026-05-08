@@ -21,7 +21,11 @@ class LLMClient:
         key = settings.llm_api_key
         base = settings.llm_api_base
         if self._client is None or key != self._last_api_key or base != self._last_api_base:
-            self._client = AsyncOpenAI(api_key=key, base_url=base)
+            import httpx
+            # 创意写作允许更长超时（创建故事需3次LLM调用），评估任务用短超时
+            timeout = 120.0 if self.tier == "creative" else 60.0
+            http_client = httpx.AsyncClient(timeout=timeout)
+            self._client = AsyncOpenAI(api_key=key, base_url=base, http_client=http_client)
             self._sync_client = OpenAI(api_key=key, base_url=base)
             self._last_api_key = key
             self._last_api_base = base

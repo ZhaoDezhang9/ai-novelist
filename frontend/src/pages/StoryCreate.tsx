@@ -88,7 +88,7 @@ export default function StoryCreate() {
   const navigate = useNavigate();
   const [idea, setIdea] = useState("");
   const [form, setForm] = useState<StoryConfig>({
-    title: "", genre: "仙侠", style: "古典雅致", pov: "第三人称",
+    title: "", genre: "仙侠", style: "爽文快节奏", pov: "第三人称",
     target_chapters: 20, words_per_chapter: 3000, target_audience: "", theme: "",
   });
   const [generating, setGenerating] = useState(false);

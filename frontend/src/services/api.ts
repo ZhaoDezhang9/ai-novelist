@@ -199,10 +199,11 @@ export interface StreamEvent {
 interface FetchOptions extends RequestInit {
   retries?: number;
   retryDelay?: number;
+  timeout?: number;
 }
 
 async function apiFetch<T>(url: string, init?: FetchOptions): Promise<T> {
-  const { retries = 0, retryDelay = 1000, ...fetchInit } = init || {};
+  const { retries = 0, retryDelay = 1000, timeout = 30000, ...fetchInit } = init || {};
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -210,7 +211,10 @@ async function apiFetch<T>(url: string, init?: FetchOptions): Promise<T> {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, retryDelay * Math.pow(2, attempt - 1)));
       }
-      const res = await fetch(url, fetchInit);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+      const res = await fetch(url, { ...fetchInit, signal: controller.signal });
+      clearTimeout(timer);
       if (!res.ok) {
         const detail = await res.text().catch(() => res.statusText);
         const err = new Error(detail || `请求失败 (${res.status})`);
@@ -219,7 +223,9 @@ async function apiFetch<T>(url: string, init?: FetchOptions): Promise<T> {
       }
       return res.json();
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
+      if (e instanceof DOMException && e.name === "AbortError") {
+        throw new Error("请求超时，请检查网络或后端服务");
+      }
       lastError = e instanceof Error ? e : new Error("请求失败");
       if (attempt >= retries) throw lastError;
     }
@@ -240,6 +246,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
       signal: opts?.signal,
+      timeout: 120000,  // 创建涉及多次LLM调用，需要较长时间
     }),
 
   generateMeta: async (idea: string, genre: string, opts?: ApiCallOptions): Promise<{ title: string; theme: string }> =>
