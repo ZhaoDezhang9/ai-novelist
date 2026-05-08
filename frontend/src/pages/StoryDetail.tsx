@@ -4,6 +4,7 @@ import { api, ChapterInfo, ChapterDetail, type StoryDetail as StoryDetailType } 
 import { useGenerationStore } from "../stores/generationStore";
 import { colors, space, font, btn, card, badge, layout, section } from "../styles";
 import TabPanel from "../components/TabPanel";
+import { useToast } from "../components/ToastProvider";
 
 type Tab = "chapters" | "outline" | "world" | "foreshadowing";
 
@@ -24,6 +25,7 @@ const tabDefs: { id: Tab; label: string }[] = [
 
 export default function StoryDetail() {
   const { id } = useParams<{ id: string }>();
+  const { show } = useToast();
   const getGeneration = useGenerationStore((s) => s.getGeneration);
   const isGenerating = useGenerationStore((s) => s.isGenerating);
   const startGeneration = useGenerationStore((s) => s.startGeneration);
@@ -122,14 +124,13 @@ export default function StoryDetail() {
   const rewriteChapter = async () => {
     if (!id || !selectedChapter || rewriting) return;
     setRewriting(true);
-    setError("");
     try {
-      await api.rewriteChapter(id, selectedChapter.chapter_number);
+      const result = await api.rewriteChapter(id, selectedChapter.chapter_number);
       await loadChapter(selectedChapter.chapter_number);
-      setError("重写完成");
-      setTimeout(() => setError(""), 3000);
-    } catch (e) { setError(e instanceof Error ? e.message : "重写失败"); }
-    finally { setRewriting(false); }
+      show(`重写完成，修复 ${result.issues_found} 个问题`, "success");
+    } catch (e) {
+      show(e instanceof Error ? e.message : "重写失败", "error");
+    } finally { setRewriting(false); }
   };
 
   if (loading) return <div style={layout.centered}>加载中...</div>;

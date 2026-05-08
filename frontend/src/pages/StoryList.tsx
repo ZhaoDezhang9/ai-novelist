@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { api, StoryListItem } from "../services/api";
 import { useApi } from "../hooks/useApi";
 import LoadingSpinner from "../components/LoadingSpinner";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useToast } from "../components/ToastProvider";
 import { colors, space, font, bp, shadows, radius, genreColors, btn, layout } from "../styles";
 
 const styles: Record<string, React.CSSProperties> = {
@@ -210,71 +212,61 @@ interface CardProps {
 function StoryCard({ story, onDelete }: CardProps) {
   const [hovered, setHovered] = useState(false);
   const [deleteHover, setDeleteHover] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const progress = getProgressPercent(story.current_chapter, story.target_chapters);
   const genreColor = getGenreColor(story.genre);
 
-  const cardStyle: CSSProperties = {
-    ...styles.card,
-    ...(hovered ? styles.cardHover : {}),
-  };
+  const cardStyle: CSSProperties = { ...styles.card, ...(hovered ? styles.cardHover : {}) };
+  const deleteStyle: CSSProperties = { ...styles.deleteBtn, ...(deleteHover ? styles.deleteBtnHover : {}) };
 
-  const deleteStyle: CSSProperties = {
-    ...styles.deleteBtn,
-    ...(deleteHover ? styles.deleteBtnHover : {}),
-  };
-
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (window.confirm(`确定要删除《${story.title}》吗？此操作不可恢复。`)) {
-      onDelete(story.id);
-    }
+    setShowConfirm(true);
   };
 
   return (
-    <Link
-      to={`/story/${story.id}`}
-      style={cardStyle}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Genre color strip */}
-      <div style={{
-        ...styles.genreStrip,
-        background: genreColor,
-      }} />
-
-      {/* Card body */}
-      <div style={styles.cardBody}>
-        <div style={styles.cardTitle}>{story.title}</div>
-        <div style={styles.cardMeta}>
-          <span style={styles.cardBadge}>{story.genre}</span>
-          <span style={styles.cardBadge}>{story.style}</span>
-          <span style={styles.cardStat}>{story.current_chapter}/{story.target_chapters} 章</span>
+    <>
+      <Link
+        to={`/story/${story.id}`}
+        style={cardStyle}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <div style={{ ...styles.genreStrip, background: genreColor }} />
+        <div style={styles.cardBody}>
+          <div style={styles.cardTitle}>{story.title}</div>
+          <div style={styles.cardMeta}>
+            <span style={styles.cardBadge}>{story.genre}</span>
+            <span style={styles.cardBadge}>{story.style}</span>
+            <span style={styles.cardStat}>{story.current_chapter}/{story.target_chapters} 章</span>
+          </div>
+          <div style={styles.cardProgress}>
+            <div style={{ ...styles.cardProgressBar, width: `${progress}%`, background: genreColor }} />
+          </div>
         </div>
-        <div style={styles.cardProgress}>
-          <div style={{
-            ...styles.cardProgressBar,
-            width: `${progress}%`,
-            background: genreColor,
-          }} />
+        <div style={styles.cardFooter}>
+          <span>{story.status === "writing" ? "创作中" : story.status === "completed" ? "已完成" : "草稿"}</span>
+          <button
+            style={deleteStyle}
+            onClick={handleDeleteClick}
+            onMouseEnter={() => setDeleteHover(true)}
+            onMouseLeave={() => setDeleteHover(false)}
+            title="删除故事"
+          >删除</button>
         </div>
-      </div>
-
-      {/* Card footer */}
-      <div style={styles.cardFooter}>
-        <span>{story.status === "writing" ? "创作中" : story.status === "completed" ? "已完成" : "草稿"}</span>
-        <button
-          style={deleteStyle}
-          onClick={handleDelete}
-          onMouseEnter={() => setDeleteHover(true)}
-          onMouseLeave={() => setDeleteHover(false)}
+      </Link>
+      {showConfirm && (
+        <ConfirmDialog
           title="删除故事"
-        >
-          删除
-        </button>
-      </div>
-    </Link>
+          message={`确定要删除《${story.title}》吗？此操作不可恢复。`}
+          confirmLabel="删除"
+          danger
+          onConfirm={() => { setShowConfirm(false); onDelete(story.id); }}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -308,15 +300,17 @@ function SkeletonCard() {
 
 export default function StoryList() {
   const { data: stories, loading, error, refetch } = useApi<StoryListItem[]>((signal) => api.listStories({ signal }), []);
+  const { show } = useToast();
 
   const totalChapters = stories?.reduce((sum, s) => sum + s.current_chapter, 0) || 0;
 
   const handleDelete = async (id: string) => {
     try {
       await api.deleteStory(id);
+      show("故事已删除", "success");
       refetch();
-    } catch (e) {
-      alert("删除失败，请重试");
+    } catch {
+      show("删除失败，请重试", "error");
     }
   };
 

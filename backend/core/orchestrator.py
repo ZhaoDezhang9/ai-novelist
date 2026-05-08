@@ -44,11 +44,17 @@ class NovelOrchestrator:
     # ========== 初始化流程 ==========
 
     async def create_story(self, config: StoryConfig) -> Story:
+        import asyncio
         story = Story(config=config)
 
-        story.outline = await self.plotter.generate_plot(story)
-        story.world_bible = await self.worldbuilder.build_world(story)
-        story.characters = await self.char_agent.generate_characters(story)
+        # 三个生成任务独立，并行执行以缩短创建时间
+        outline_task = asyncio.create_task(self.plotter.generate_plot(story))
+        world_task = asyncio.create_task(self.worldbuilder.build_world(story))
+        chars_task = asyncio.create_task(self.char_agent.generate_characters(story))
+
+        story.outline = await outline_task
+        story.world_bible = await world_task
+        story.characters = await chars_task
 
         await story_db.save_story(story.id, story.model_dump())
         await story_db.save_outline(story.id, story.outline)

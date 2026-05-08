@@ -8,6 +8,7 @@ import Settings from "./pages/Settings";
 import { useGenerationStore } from "./stores/generationStore";
 import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalAnimations from "./components/GlobalAnimations";
+import { ToastProvider } from "./components/ToastProvider";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 import { colors, layout, font, space, bp, scrollbar, shadows, radius, fonts } from "./styles";
 
@@ -57,7 +58,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <AppInner />
+        <ToastProvider>
+          <AppInner />
+        </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
