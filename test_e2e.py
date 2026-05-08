@@ -1,5 +1,6 @@
 """Full end-to-end test: Create -> Write Ch1 -> Write Ch2 -> List -> Read"""
-import asyncio, json, time
+import asyncio
+import time
 from backend.core.models import StoryConfig, StoryGenre, StoryStyle, NarrativePOV
 from backend.core.orchestrator import NovelOrchestrator
 from backend.memory import story_db
@@ -50,7 +51,7 @@ async def test():
     print(f"  Words: {ch1.word_count}")
     print(f"  Status: {ch1.status.value}")
     print(f"  Rewrites: {ch1.rewrites_count}")
-    print(f"  Check results:")
+    print("  Check results:")
     for cr in ch1.check_results:
         mark = "PASS" if cr.passed else "FAIL"
         print(f"    [{mark}] {cr.layer} (issues={len(cr.issues)}) scores={cr.scores}")
@@ -67,7 +68,7 @@ async def test():
     print(f"  Ch{ch2.chapter_number}: {ch2.title}")
     print(f"  Words: {ch2.word_count}")
     print(f"  Status: {ch2.status.value}")
-    print(f"  Check results:")
+    print("  Check results:")
     for cr in ch2.check_results:
         mark = "PASS" if cr.passed else "FAIL"
         print(f"    [{mark}] {cr.layer} (issues={len(cr.issues)}) scores={cr.scores}")
@@ -93,7 +94,7 @@ async def test():
         print(f"  Status: {ch_data.get('status','')}")
         print(f"  Content length: {len(ch_data.get('content',''))} chars")
         content = ch_data.get("content", "")
-        print(f"  Full content:")
+        print("  Full content:")
         print(f"  {content[:500]}...")
     else:
         print("  ERROR: Chapter not found in DB!")

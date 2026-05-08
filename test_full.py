@@ -1,5 +1,7 @@
 """全链路测试：创建故事 → 写第1章 → 质检 → 验证"""
-import urllib.request, json, time
+import urllib.request
+import json
+import time
 
 BASE = "http://localhost:8000/api"
 
@@ -52,7 +54,7 @@ print(f"  第{ch1['chapter_number']}章: {ch1['title']}")
 print(f"  字数: {ch1['word_count']}")
 print(f"  状态: {ch1['status']}")
 print(f"  改写次数: {ch1['rewrites_count']}")
-print(f"  质检结果:")
+print("  质检结果:")
 for cr in ch1.get("check_results", []):
     mark = "PASS" if cr["passed"] else "FAIL"
     print(f"    [{mark}] {cr['layer']} (issues={cr['issues_count']})")

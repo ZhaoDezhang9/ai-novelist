@@ -1,4 +1,7 @@
-import urllib.request, json, time, os
+import urllib.request
+import json
+import time
+import os
 import pytest
 
 BASE = os.environ.get("API_BASE", "http://localhost:8000")

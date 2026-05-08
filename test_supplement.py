@@ -1,5 +1,7 @@
 """Supplementary tests: settings, story detail, chapters, error cases, delete"""
-import urllib.request, json, sys
+import urllib.request
+import json
+import sys
 
 BASE = "http://localhost:8000/api"
 PASS = 0
@@ -65,7 +67,7 @@ try:
     fail("should have returned 404")
 except urllib.error.HTTPError as e:
     assert e.code == 404, f"expected 404, got {e.code}"
-    ok(f"404 returned correctly")
+    ok("404 returned correctly")
 except Exception as e:
     fail(str(e))
 

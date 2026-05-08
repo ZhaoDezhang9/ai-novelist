@@ -111,7 +111,7 @@ class OutlineEngine:
             rules = []
             for r in data.get("rules", []):
                 if isinstance(r, dict):
-                    rules.append(r.get("rule", r.get("description", str(r))))
+                    rules.append(r.get("rule") or r.get("description") or str(r))
                 else:
                     rules.append(str(r))
             # 规范化 factions: LLM 可能返回 [{"name": "...", "description": "..."}] 或 ["..."]
