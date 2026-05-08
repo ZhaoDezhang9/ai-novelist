@@ -24,7 +24,7 @@ const tabDefs: { id: Tab; label: string }[] = [
 ];
 
 export default function StoryDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams() as { id: string };
   const { show } = useToast();
   const getGeneration = useGenerationStore((s) => s.getGeneration);
   const isGenerating = useGenerationStore((s) => s.isGenerating);

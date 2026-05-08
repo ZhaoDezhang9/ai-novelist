@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, type ChapterInfo, type ChapterDetail, type StoryDetail } from "../services/api";
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 import { colors, fonts, radius, space, shadows } from "../styles";
 import TabPanel from "../components/TabPanel";
 import CharacterGraph from "../components/CharacterGraph";
@@ -26,7 +26,7 @@ const tabDefs = [
 ];
 
 export default function Reader() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams() as { id: string };
   const [story, setStory] = useState<StoryDetail | null>(null);
   const [chapters, setChapters] = useState<ChapterInfo[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<ChapterDetail | null>(null);
